@@ -7,8 +7,6 @@
 
 A production-grade **forensic image analysis platform** for detecting AI-generated images. Features multi-model ensemble detection, CLIP semantic analysis, manipulation detection with heatmap visualization, and comprehensive metadata forensics.
 
-<<<<<<< HEAD
-## ✨ Özellikler
 =======
 ![AI Image Detector](ai-detect.PNG)
 
