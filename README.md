@@ -7,8 +7,6 @@
 
 Modern ve gelişmiş **AI Image Detector** - Yapay zeka tarafından üretilen görselleri tespit eden web uygulaması. Gelişmiş bilgisayarlı görü teknikleri ve makine öğrenmesi modelleri ile %90+ doğruluk oranında AI detection.
 
-![AI Image Detector Demo](https://via.placeholder.com/800x400/1e293b/60a5fa?text=AI+Image+Detector+Demo)
-
 ## ✨ Özellikler
 
 ### 🔬 Gelişmiş AI Tespit Teknolojileri
