@@ -19,13 +19,22 @@ echo 📚 Backend bağımlılıkları yükleniyor...
 cd backend
 pip install -r requirements.txt
 
+REM AI Detection modelini önceden indir
+echo 🤖 AI Detection modeli indiriliyor (umm-maybe/AI-image-detector)...
+echo    Bu işlem ilk seferde ~350MB indirecek, lütfen bekleyin...
+python -c "from transformers import pipeline; print('📥 Model indiriliyor...'); detector = pipeline('image-classification', model='umm-maybe/AI-image-detector'); print('✅ Model başarıyla indirildi!')"
+
+cd ..
+
+echo.
 echo ✅ Kurulum tamamlandı!
 echo.
 echo 🎯 Çalıştırma komutları:
-echo Backend: run_backend_venv.bat
-echo Frontend: run_frontend.bat
+echo    Forensic Backend: run_forensic_backend.bat
+echo    Frontend: run_frontend.bat
 echo.
 echo 📍 Erişim adresleri:
-echo Frontend: http://localhost:3000
-echo Backend: http://localhost:8000
+echo    Frontend: http://localhost:3000
+echo    Backend API: http://localhost:8001
+echo    API Docs: http://localhost:8001/docs
 pause

@@ -1,1195 +1,553 @@
+"""
+AI Image Detector Backend - Production Grade Forensic Analysis v6
+==================================================================
+Multi-model ensemble with calibration, uncertainty, GPS, JPEG forensics.
+Backward compatible with feature flags.
+"""
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import torch
-from transformers import pipeline, AutoImageProcessor, AutoModelForImageClassification
 from PIL import Image
-from PIL.ExifTags import TAGS
 import io
 import logging
-import asyncio
-from typing import Dict, Any
-import json
 import hashlib
 from datetime import datetime
-import requests
-import numpy as np
-from scipy import ndimage
+from typing import Dict, Any
 
-# Configure logging
+from forensic.config import get_config, ForensicConfig
+from forensic.ai_detector import ForensicAIDetector, EvidenceLevel
+from forensic.metadata import MetadataExtractor
+from forensic.domain import DomainDetector
+from forensic.jpeg_forensics import JPEGForensics
+from forensic.statistics import StatisticalAnalyzer, ModelScore
+from forensic.ai_type import AITypeClassifier
+from forensic.content_type import ContentTypeClassifier, get_content_type_classifier
+from forensic.verdict_generator import generate_verdict_text, VerdictKey
+from forensic.manipulation import get_manipulation_detector
+from forensic.edit_assessment import get_edit_assessor, EditType
+from forensic.diffusion_fingerprint import get_diffusion_fingerprint
+from forensic.pathway_classifier import get_pathway_classifier, PathwayType
+from forensic.visualization import get_forensic_visualizer, VisualizationMode
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="AI Image Detector API",
-    description="Backend service for AI-generated image detection",
-    version="1.0.0"
+    title="AI Image Detector - Forensic Analysis",
+    description="Production-grade AI detection with ensemble models, calibration, and uncertainty",
+    version="6.0.0"
 )
 
-# CORS configuration for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global model variables
-ai_detector_model = None
-processor = None
-
-# Model configuration - easily changeable
-MODEL_CONFIG = {
-    "model_name": "google/vit-base-patch16-224",  # Stable fallback model
-    "device": "cuda" if torch.cuda.is_available() else "cpu",
-    "max_image_size": (1024, 1024),
-    "supported_formats": ["JPEG", "PNG", "WebP", "BMP"]
-}
-
-async def load_model():
-    """Load AI detection model on startup"""
-    global ai_detector_model, processor
-    
-    try:
-        logger.info(f"Loading model: {MODEL_CONFIG['model_name']}")
-        
-        # Use image classification pipeline (more stable)
-        ai_detector_model = pipeline(
-            "image-classification",
-            model=MODEL_CONFIG["model_name"],
-            device=0 if MODEL_CONFIG["device"] == "cuda" else -1
-        )
-        logger.info("AI detection model loaded successfully")
-            
-    except Exception as e:
-        logger.error(f"Failed to load model: {e}")
-        raise RuntimeError("Model loading failed")
+# Global instances
+config: ForensicConfig = None
+detector: ForensicAIDetector = None
+metadata_extractor: MetadataExtractor = None
+domain_detector: DomainDetector = None
+jpeg_forensics: JPEGForensics = None
+stats_analyzer: StatisticalAnalyzer = None
+ai_type_classifier: AITypeClassifier = None
+content_type_classifier: ContentTypeClassifier = None
 
 @app.on_event("startup")
-async def startup_event():
-    """Initialize models on startup"""
-    await load_model()
+async def startup():
+    global config, detector, metadata_extractor, domain_detector
+    global jpeg_forensics, stats_analyzer, ai_type_classifier, content_type_classifier
+    
+    logger.info("🚀 Starting Forensic AI Detector v6.0...")
+    
+    config = get_config()
+    
+    detector = ForensicAIDetector({})
+    await detector.load_model()
+    
+    metadata_extractor = MetadataExtractor()
+    domain_detector = DomainDetector()
+    jpeg_forensics = JPEGForensics()
+    stats_analyzer = StatisticalAnalyzer()
+    ai_type_classifier = AITypeClassifier()
+    
+    # Initialize content type classifier with CLIP model from detector
+    content_type_classifier = get_content_type_classifier()
+    if detector.clip_model and config.ENABLE_CLIP_PROMPT_ENSEMBLE:
+        content_type_classifier.set_clip_model(
+            detector.clip_model, 
+            detector.clip_preprocess, 
+            detector.device
+        )
+        logger.info("✅ Content type classifier initialized with CLIP")
+    
+    logger.info("✅ All systems ready")
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    model_status = "loaded" if ai_detector_model is not None else "not_loaded"
+async def health():
     return {
         "status": "healthy",
-        "model_status": model_status,
-        "device": MODEL_CONFIG["device"],
-        "timestamp": datetime.now().isoformat()
+        "version": "6.5.0",
+        "models_loaded": len(detector.models) if detector else 0,
+        "features": {
+            "jpeg_forensics": config.ENABLE_JPEG_FORENSICS if config else False,
+            "xmp_iptc": config.ENABLE_XMP_IPTC if config else False,
+            "calibration": config.ENABLE_CALIBRATION if config else False,
+            "non_photo_gate": config.ENABLE_NON_PHOTO_GATE if config else False,
+            "clip_prompt_ensemble": config.ENABLE_CLIP_PROMPT_ENSEMBLE if config else False,
+            "two_axis_output": config.ENABLE_TWO_AXIS_OUTPUT if config else False,
+            "verdict_text": config.ENABLE_VERDICT_TEXT if config else False,
+            "manipulation_detection": config.ENABLE_MANIPULATION_MODULES if config else False,
+            "pathway_classifier": config.ENABLE_PATHWAY_CLASSIFIER if config else False,
+            "diffusion_fingerprint": config.ENABLE_DIFFUSION_FINGERPRINT if config else False
+        }
     }
 
-def validate_image(file_content: bytes, filename: str) -> Dict[str, Any]:
-    """Validate uploaded image"""
-    # Check file size (10MB limit)
-    if len(file_content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
-    
-    # Check file type using PIL
-    try:
-        image = Image.open(io.BytesIO(file_content))
-        image.verify()  # Verify it's a valid image
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image file")
-    
-    return {
-        "size_bytes": len(file_content),
-        "mime_type": f"image/{image.format.lower()}" if hasattr(image, 'format') else "image/unknown",
-        "filename": filename
-    }
-
-def analyze_metadata(image_bytes: bytes) -> Dict[str, Any]:
-    """Enhanced metadata analysis for latest AI generation tools"""
-    try:
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Extract EXIF data
-        exif_data = {}
-        if hasattr(image, '_getexif') and image._getexif() is not None:
-            exif = image._getexif()
-            for tag_id, value in exif.items():
-                tag = TAGS.get(tag_id, tag_id)
-                exif_data[tag] = value
-        
-        # Enhanced AI generation software signatures (2024 updated)
-        ai_software_markers = [
-            # Google AI Tools
-            "gemini", "bard", "imagen", "parti", "google ai",
-            # OpenAI Tools
-            "dall-e", "dall·e", "dall-e 2", "dall-e 3", "chatgpt", "gpt-4", "openai",
-            # Midjourney Versions
-            "midjourney", "mj", "midjourney v6", "midjourney v5", "midjourney v4",
-            # Stability AI
-            "stable diffusion", "sdxl", "sd xl", "stability ai", "dreamstudio",
-            # Adobe AI
-            "firefly", "adobe firefly", "photoshop ai", "generative fill",
-            # Microsoft AI
-            "copilot", "bing image creator", "designer", "microsoft ai",
-            # Anthropic
-            "claude", "anthropic",
-            # Meta AI
-            "meta ai", "imagine", "llama", "emu",
-            # Other Popular Tools
-            "leonardo", "runway", "artbreeder", "deepai", "nightcafe",
-            "wombo", "starryai", "craiyon", "bluewillow", "playground",
-            "canva ai", "jasper", "copy.ai", "synthesia", "luma ai",
-            # New 2024 Tools
-            "pika labs", "gen-2", "sora", "ideogram", "flux", "black forest labs",
-            "recraft", "freepik ai", "clipdrop", "remove.bg", "upscayl",
-            # Chinese AI Tools
-            "baidu", "tencent ai", "alibaba ai", "bytedance", "douyin ai",
-            # Mobile AI Apps
-            "prisma", "artisto", "deepart", "neural cam", "ai photo enhancer"
-        ]
-        
-        software_info = str(exif_data.get('Software', '')).lower()
-        comment_info = str(exif_data.get('ImageDescription', '')).lower()
-        artist_info = str(exif_data.get('Artist', '')).lower()
-        copyright_info = str(exif_data.get('Copyright', '')).lower()
-        
-        # Check all metadata fields for AI markers
-        all_metadata = f"{software_info} {comment_info} {artist_info} {copyright_info}".lower()
-        
-        detected_ai_tools = []
-        for marker in ai_software_markers:
-            if marker in all_metadata:
-                detected_ai_tools.append(marker.title())
-        
-        # Enhanced suspicious patterns detection
-        suspicious_patterns = []
-        
-        # No camera info but has creation software
-        if software_info and not exif_data.get('Make') and not exif_data.get('Model'):
-            suspicious_patterns.append("Software without camera info")
-        
-        # Perfect dimensions (common AI sizes including new 2024 standards)
-        width = image.width
-        height = image.height
-        common_ai_sizes = [512, 768, 1024, 1152, 1216, 1344, 1536, 1792, 2048, 2304, 2560]
-        if width in common_ai_sizes or height in common_ai_sizes:
-            suspicious_patterns.append(f"Common AI dimensions: {width}x{height}")
-        
-        # Square images are often AI generated
-        if abs(width - height) < 10:
-            suspicious_patterns.append("Perfect square aspect ratio")
-        
-        # Common AI aspect ratios (2024 update)
-        aspect_ratio = width / height
-        common_ai_ratios = [1.0, 1.33, 1.5, 1.77, 0.75, 0.67, 0.56, 1.25, 1.6, 0.8]
-        for ratio in common_ai_ratios:
-            if abs(aspect_ratio - ratio) < 0.02:
-                suspicious_patterns.append(f"AI-typical aspect ratio: {aspect_ratio:.2f}")
-                break
-        
-        # Check for AI-specific metadata patterns
-        if 'generated' in all_metadata or 'artificial' in all_metadata:
-            suspicious_patterns.append("Contains 'generated' or 'artificial' keywords")
-        
-        # Check for missing typical camera metadata
-        camera_fields = ['Make', 'Model', 'DateTime', 'ExifVersion', 'Flash', 'FocalLength']
-        missing_camera_fields = sum(1 for field in camera_fields if field not in exif_data)
-        if missing_camera_fields >= 4:
-            suspicious_patterns.append(f"Missing {missing_camera_fields}/6 typical camera fields")
-        
-        # Check for AI-typical creation dates (batch processing indicators)
-        if 'DateTime' in exif_data:
-            date_str = str(exif_data['DateTime'])
-            # AI tools often create images with round timestamps
-            if ':00:00' in date_str or date_str.endswith('00:00'):
-                suspicious_patterns.append("Round timestamp (batch processing indicator)")
-        
-        return {
-            "exif_data_present": len(exif_data) > 0,
-            "ai_tools_detected": detected_ai_tools,
-            "suspicious_patterns": suspicious_patterns,
-            "software_info": software_info if software_info else None,
-            "camera_make": exif_data.get('Make'),
-            "camera_model": exif_data.get('Model'),
-            "creation_software": exif_data.get('Software'),
-            "copyright_info": exif_data.get('Copyright'),
-            "metadata_analysis": f"Found {len(exif_data)} EXIF fields, {len(detected_ai_tools)} AI tools detected, {len(suspicious_patterns)} suspicious patterns"
-        }
-        
-    except Exception as e:
-        logger.warning(f"Metadata analysis failed: {e}")
-        return {
-            "exif_data_present": False,
-            "ai_tools_detected": [],
-            "suspicious_patterns": [],
-            "error": str(e),
-            "metadata_analysis": "Metadata analysis failed"
-        }
-
-async def analyze_with_ai_model(image: Image.Image) -> Dict[str, Any]:
-    """Ultra-enhanced AI detection with aggressive algorithms"""
-    try:
-        # Resize image if too large
-        original_size = image.size
-        if image.size[0] > MODEL_CONFIG["max_image_size"][0] or image.size[1] > MODEL_CONFIG["max_image_size"][1]:
-            image.thumbnail(MODEL_CONFIG["max_image_size"], Image.Resampling.LANCZOS)
-        
-        # Convert to RGB if necessary
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # 1. Basic image classification
-        results = ai_detector_model(image)
-        
-        # 2. ULTRA-AGGRESSIVE AI detection heuristics
-        ai_probability = await analyze_ai_signatures_ultra(image, original_size)
-        
-        # 3. Enhanced model result analysis
-        model_confidence = 0.6
-        ai_boost = 0.0
-        
-        for result in results:
-            label = result['label'].lower()
-            score = result['score']
-            
-            # AGGRESSIVE: Look for AI-related patterns in classification
-            if any(term in label for term in ['digital', 'computer', 'generated', 'artificial', 'synthetic']):
-                ai_boost += score * 1.2  # Increased multiplier
-                logger.info(f"🚨 AI LABEL DETECTED: {label} (score: {score:.2f})")
-            elif any(term in label for term in ['perfect', 'flawless', 'ideal', 'pristine', 'clean']):
-                ai_boost += score * 0.9  # AI tends to be "too perfect"
-                logger.info(f"🚨 PERFECTION INDICATOR: {label} (score: {score:.2f})")
-            elif any(term in label for term in ['render', 'cgi', '3d', 'model', 'design']):
-                ai_boost += score * 1.1  # 3D/CGI indicators
-                logger.info(f"🚨 CGI INDICATOR: {label} (score: {score:.2f})")
-            elif score > 0.95:  # Suspiciously high confidence is AI-like
-                ai_boost += 0.3
-                logger.info(f"🚨 SUSPICIOUS HIGH CONFIDENCE: {label} ({score:.2f})")
-            
-            model_confidence = max(model_confidence, score)
-        
-        # Combine probabilities more aggressively
-        final_probability = min(1.0, ai_probability + (ai_boost * 0.4))
-        
-        return {
-            "ai_probability": final_probability,
-            "confidence": min(max(model_confidence, 0.0), 1.0),
-            "model_used": MODEL_CONFIG["model_name"],
-            "analysis_successful": True,
-            "top_predictions": results[:3] if results else [],
-            "detection_details": await get_detection_details(image, final_probability),
-            "ai_boost_applied": ai_boost
-        }
-        
-    except Exception as e:
-        logger.error(f"AI model analysis failed: {e}")
-        return {
-            "ai_probability": 0.5,
-            "confidence": 0.3,
-            "model_used": "fallback",
-            "analysis_successful": False,
-            "error": str(e)
-        }
-
-async def analyze_ai_signatures_ultra(image: Image.Image, original_size: tuple) -> float:
-    """ULTRA-AGGRESSIVE AI signature detection with enhanced algorithms"""
-    import numpy as np
-    
-    # Convert to numpy array for analysis
-    img_array = np.array(image)
-    height, width = img_array.shape[:2]
-    
-    ai_score = 0.2  # Lower base score, but more aggressive detection
-    suspicious_factors = 0
-    critical_flags = 0  # New: Critical AI indicators
-    
-    logger.info(f"🔍 ULTRA ANALYSIS START: {original_size} -> {image.size}")
-    
-    # 1. ENHANCED Dimension Analysis - More AI sizes
-    ultra_common_ai_dimensions = [
-        # Standard AI sizes
-        (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
-        # Midjourney favorites
-        (512, 768), (768, 512), (1024, 768), (768, 1024), (1152, 896), (896, 1152),
-        # DALL-E sizes
-        (1024, 1024), (1792, 1024), (1024, 1792),
-        # Stable Diffusion XL
-        (1216, 832), (832, 1216), (1344, 768), (768, 1344),
-        # New 2024 sizes
-        (1280, 720), (720, 1280), (1920, 1080), (1080, 1920),
-        (2304, 1536), (1536, 2304), (2560, 1440), (1440, 2560)
-    ]
-    
-    if original_size in ultra_common_ai_dimensions:
-        ai_score += 0.4  # Increased from 0.3
-        critical_flags += 1
-        suspicious_factors += 1
-        logger.info(f"🚨 CRITICAL: Exact AI dimension {original_size}")
-    
-    # 2. ULTRA-PRECISE aspect ratios
-    aspect_ratio = original_size[0] / original_size[1]
-    ultra_precise_ratios = [
-        1.0, 1.33333, 1.5, 1.77778, 0.75, 0.66667, 0.5625,  # Standard
-        1.25, 1.6, 0.8, 1.28571, 0.77778, 1.41667, 0.70588,  # AI favorites
-        2.0, 0.5, 1.2, 0.83333, 1.77777, 0.5625  # Extreme ratios
-    ]
-    
-    for ratio in ultra_precise_ratios:
-        if abs(aspect_ratio - ratio) < 0.01:  # More precise matching
-            ai_score += 0.25
-            suspicious_factors += 1
-            logger.info(f"🚨 ULTRA-PRECISE RATIO: {aspect_ratio:.5f} ≈ {ratio}")
-            break
-    
-    # 3. ENHANCED Color Analysis
-    color_score = analyze_color_signatures_ultra(img_array)
-    ai_score += color_score
-    if color_score > 0.3:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 4. ULTRA-SENSITIVE Noise Analysis
-    noise_score = analyze_noise_signatures_ultra(img_array)
-    ai_score += noise_score
-    if noise_score > 0.35:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 5. AGGRESSIVE Edge Analysis
-    edge_score = analyze_edge_signatures_ultra(img_array)
-    ai_score += edge_score
-    if edge_score > 0.3:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 6. ENHANCED Frequency Analysis
-    freq_score = analyze_frequency_signatures_ultra(img_array)
-    ai_score += freq_score
-    if freq_score > 0.25:
-        suspicious_factors += 1
-    
-    # 7. NEW: Texture Analysis
-    texture_score = analyze_texture_signatures(img_array)
-    ai_score += texture_score
-    if texture_score > 0.2:
-        suspicious_factors += 1
-    
-    # 8. NEW: Compression Artifact Analysis
-    compression_score = analyze_compression_artifacts(img_array)
-    ai_score += compression_score
-    if compression_score > 0.2:
-        suspicious_factors += 1
-    
-    # ULTRA-AGGRESSIVE Multipliers
-    if critical_flags >= 2:
-        ai_score *= 1.8  # Massive boost for multiple critical flags
-        logger.info(f"🚨🚨 MULTIPLE CRITICAL FLAGS: {critical_flags} - MAJOR AI SIGNATURE")
-    elif critical_flags >= 1:
-        ai_score *= 1.5  # Strong boost for critical flags
-        logger.info(f"🚨 CRITICAL FLAG DETECTED: {critical_flags}")
-    
-    if suspicious_factors >= 4:
-        ai_score *= 1.6  # High confidence with many factors
-        logger.info(f"🚨 HIGH SUSPICION: {suspicious_factors} factors")
-    elif suspicious_factors >= 3:
-        ai_score *= 1.4
-        logger.info(f"🚨 MODERATE SUSPICION: {suspicious_factors} factors")
-    elif suspicious_factors >= 2:
-        ai_score *= 1.2
-    
-    logger.info(f"🔍 ULTRA ANALYSIS: Score={ai_score:.3f}, Factors={suspicious_factors}, Critical={critical_flags}")
-    
-    return min(ai_score, 1.0)
-
-async def analyze_ai_signatures_ultra(image: Image.Image, original_size: tuple) -> float:
-    """ULTRA-AGGRESSIVE AI signature detection with enhanced algorithms"""
-    import numpy as np
-    
-    # Convert to numpy array for analysis
-    img_array = np.array(image)
-    height, width = img_array.shape[:2]
-    
-    ai_score = 0.2  # Lower base score, but more aggressive detection
-    suspicious_factors = 0
-    critical_flags = 0  # New: Critical AI indicators
-    
-    logger.info(f"🔍 ULTRA ANALYSIS START: {original_size} -> {image.size}")
-    
-    # 1. ENHANCED Dimension Analysis - More AI sizes
-    ultra_common_ai_dimensions = [
-        # Standard AI sizes
-        (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
-        # Midjourney favorites
-        (512, 768), (768, 512), (1024, 768), (768, 1024), (1152, 896), (896, 1152),
-        # DALL-E sizes
-        (1024, 1024), (1792, 1024), (1024, 1792),
-        # Stable Diffusion XL
-        (1216, 832), (832, 1216), (1344, 768), (768, 1344),
-        # New 2024 sizes
-        (1280, 720), (720, 1280), (1920, 1080), (1080, 1920),
-        (2304, 1536), (1536, 2304), (2560, 1440), (1440, 2560)
-    ]
-    
-    if original_size in ultra_common_ai_dimensions:
-        ai_score += 0.4  # Increased from 0.3
-        critical_flags += 1
-        suspicious_factors += 1
-        logger.info(f"🚨 CRITICAL: Exact AI dimension {original_size}")
-    
-    # 2. ULTRA-PRECISE aspect ratios
-    aspect_ratio = original_size[0] / original_size[1]
-    ultra_precise_ratios = [
-        1.0, 1.33333, 1.5, 1.77778, 0.75, 0.66667, 0.5625,  # Standard
-        1.25, 1.6, 0.8, 1.28571, 0.77778, 1.41667, 0.70588,  # AI favorites
-        2.0, 0.5, 1.2, 0.83333, 1.77777, 0.5625  # Extreme ratios
-    ]
-    
-    for ratio in ultra_precise_ratios:
-        if abs(aspect_ratio - ratio) < 0.01:  # More precise matching
-            ai_score += 0.25
-            suspicious_factors += 1
-            logger.info(f"🚨 ULTRA-PRECISE RATIO: {aspect_ratio:.5f} ≈ {ratio}")
-            break
-    
-    # 3. ENHANCED Color Analysis
-    color_score = analyze_color_signatures_ultra(img_array)
-    ai_score += color_score
-    if color_score > 0.3:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 4. ULTRA-SENSITIVE Noise Analysis
-    noise_score = analyze_noise_signatures_ultra(img_array)
-    ai_score += noise_score
-    if noise_score > 0.35:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 5. AGGRESSIVE Edge Analysis
-    edge_score = analyze_edge_signatures_ultra(img_array)
-    ai_score += edge_score
-    if edge_score > 0.3:
-        critical_flags += 1
-        suspicious_factors += 1
-    
-    # 6. ENHANCED Frequency Analysis
-    freq_score = analyze_frequency_signatures_ultra(img_array)
-    ai_score += freq_score
-    if freq_score > 0.25:
-        suspicious_factors += 1
-    
-    # ULTRA-AGGRESSIVE Multipliers
-    if critical_flags >= 2:
-        ai_score *= 1.8  # Massive boost for multiple critical flags
-        logger.info(f"🚨🚨 MULTIPLE CRITICAL FLAGS: {critical_flags} - MAJOR AI SIGNATURE")
-    elif critical_flags >= 1:
-        ai_score *= 1.5  # Strong boost for critical flags
-        logger.info(f"🚨 CRITICAL FLAG DETECTED: {critical_flags}")
-    
-    if suspicious_factors >= 4:
-        ai_score *= 1.6  # High confidence with many factors
-        logger.info(f"🚨 HIGH SUSPICION: {suspicious_factors} factors")
-    elif suspicious_factors >= 3:
-        ai_score *= 1.4
-        logger.info(f"🚨 MODERATE SUSPICION: {suspicious_factors} factors")
-    elif suspicious_factors >= 2:
-        ai_score *= 1.2
-    
-    logger.info(f"🔍 ULTRA ANALYSIS: Score={ai_score:.3f}, Factors={suspicious_factors}, Critical={critical_flags}")
-    
-    return min(ai_score, 1.0)
-
-def analyze_color_signatures_ultra(img_array: np.ndarray) -> float:
-    """ULTRA-AGGRESSIVE AI-specific color pattern detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    # 1. ENHANCED Oversaturation Detection (AI loves vivid colors)
-    hsv = np.array(Image.fromarray(img_array).convert('HSV'))
-    saturation = hsv[:, :, 1] / 255.0
-    
-    # More aggressive thresholds
-    ultra_high_sat = np.sum(saturation > 0.85) / saturation.size
-    extreme_sat = np.sum(saturation > 0.95) / saturation.size
-    
-    if extreme_sat > 0.15:  # Very aggressive
-        score += 0.5
-        logger.info(f"🎨 ULTRA AI COLOR: Extreme saturation {extreme_sat:.3f}")
-    elif ultra_high_sat > 0.25:
-        score += 0.35
-        logger.info(f"🎨 AI COLOR: Ultra-high saturation {ultra_high_sat:.3f}")
-    
-    # 2. ENHANCED Color Quantization (AI creates banding)
-    unique_colors = len(np.unique(img_array.reshape(-1, img_array.shape[-1]), axis=0))
-    total_pixels = img_array.shape[0] * img_array.shape[1]
-    color_diversity = unique_colors / total_pixels
-    
-    if color_diversity < 0.05:  # Much more aggressive
-        score += 0.4
-        logger.info(f"🎨 ULTRA AI COLOR: Severe quantization {color_diversity:.4f}")
-    elif color_diversity < 0.08:
-        score += 0.3
-        logger.info(f"🎨 AI COLOR: Heavy quantization {color_diversity:.4f}")
-    
-    # 3. NEW: Perfect Color Transitions (AI signature)
-    # Check for unnaturally smooth color transitions
-    for channel in range(3):  # RGB channels
-        channel_data = img_array[:, :, channel]
-        gradient_x = np.abs(np.diff(channel_data.astype(float), axis=1))
-        gradient_y = np.abs(np.diff(channel_data.astype(float), axis=0))
-        
-        # Count "perfect" gradients (too smooth)
-        perfect_gradients_x = np.sum((gradient_x > 0) & (gradient_x < 1.5))
-        perfect_gradients_y = np.sum((gradient_y > 0) & (gradient_y < 1.5))
-        total_gradients = gradient_x.size + gradient_y.size
-        
-        if total_gradients > 0:
-            perfect_ratio = (perfect_gradients_x + perfect_gradients_y) / total_gradients
-            if perfect_ratio > 0.6:  # Too many perfect transitions
-                score += 0.2
-                logger.info(f"🎨 AI COLOR: Perfect transitions in channel {channel}: {perfect_ratio:.3f}")
-                break
-    
-    # 4. NEW: Color Palette Analysis (AI uses limited palettes)
-    # Analyze dominant colors
-    reshaped = img_array.reshape(-1, 3)
-    from collections import Counter
-    
-    # Sample colors to avoid memory issues
-    sample_size = min(10000, len(reshaped))
-    sampled_colors = reshaped[::len(reshaped)//sample_size]
-    
-    # Round colors to detect AI's tendency for "clean" colors
-    rounded_colors = np.round(sampled_colors / 16) * 16  # Round to nearest 16
-    unique_rounded = len(np.unique(rounded_colors, axis=0))
-    
-    if unique_rounded < sample_size * 0.1:  # Too few unique rounded colors
-        score += 0.25
-        logger.info(f"🎨 AI COLOR: Limited palette detected {unique_rounded}/{sample_size}")
-    
-    return min(score, 0.6)
-
-def analyze_noise_signatures_ultra(img_array: np.ndarray) -> float:
-    """ULTRA-SENSITIVE noise pattern detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    # Convert to grayscale for noise analysis
-    if len(img_array.shape) == 3:
-        gray = np.mean(img_array, axis=2)
-    else:
-        gray = img_array
-    
-    # 1. ULTRA-SENSITIVE Local Variance Analysis
-    kernel_sizes = [3, 5, 7]  # Multiple kernel sizes
-    ultra_clean_regions = 0
-    total_regions = 0
-    
-    for kernel_size in kernel_sizes:
-        variances = []
-        for i in range(0, gray.shape[0] - kernel_size, kernel_size//2):  # Overlapping patches
-            for j in range(0, gray.shape[1] - kernel_size, kernel_size//2):
-                patch = gray[i:i+kernel_size, j:j+kernel_size]
-                variance = np.var(patch)
-                variances.append(variance)
-                total_regions += 1
-                
-                # Count ultra-clean regions (AI signature)
-                if variance < 5:  # Very low threshold
-                    ultra_clean_regions += 1
-    
-    if total_regions > 0:
-        clean_ratio = ultra_clean_regions / total_regions
-        if clean_ratio > 0.7:  # Too many clean regions
-            score += 0.5
-            logger.info(f"🔍 ULTRA AI NOISE: {clean_ratio:.3f} ultra-clean regions")
-        elif clean_ratio > 0.5:
-            score += 0.35
-            logger.info(f"🔍 AI NOISE: {clean_ratio:.3f} clean regions")
-    
-    # 2. NEW: Noise Distribution Analysis
-    # Real photos have natural noise distribution, AI doesn't
-    noise_map = np.abs(gray - np.mean(gray))
-    noise_histogram, bins = np.histogram(noise_map, bins=50)
-    
-    # AI tends to have very peaked noise distribution
-    peak_ratio = np.max(noise_histogram) / np.mean(noise_histogram)
-    if peak_ratio > 15:  # Too peaked
-        score += 0.3
-        logger.info(f"🔍 AI NOISE: Peaked distribution {peak_ratio:.1f}")
-    
-    # 3. NEW: High-frequency noise analysis
-    # Apply high-pass filter to detect lack of natural grain
-    from scipy import ndimage
-    high_pass = gray - ndimage.gaussian_filter(gray, sigma=1)
-    high_freq_energy = np.std(high_pass)
-    
-    if high_freq_energy < 2:  # Too little high-frequency noise
-        score += 0.25
-        logger.info(f"🔍 AI NOISE: Low high-freq energy {high_freq_energy:.2f}")
-    
-    return min(score, 0.6)
-
-def analyze_edge_signatures_ultra(img_array: np.ndarray) -> float:
-    """ULTRA-AGGRESSIVE edge pattern detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    # Convert to grayscale
-    if len(img_array.shape) == 3:
-        gray = np.mean(img_array, axis=2)
-    else:
-        gray = img_array
-    
-    # Enhanced Sobel edge detection with multiple scales
-    sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
-    sobel_y = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]])
-    
-    # Apply Sobel at multiple scales
-    edges_total = np.zeros_like(gray)
-    
-    for scale in [1, 2, 3]:  # Multiple scales
-        if scale > 1:
-            scaled_gray = ndimage.zoom(gray, 1/scale, order=1)
-            scaled_gray = ndimage.zoom(scaled_gray, scale, order=1)
-            if scaled_gray.shape != gray.shape:
-                scaled_gray = np.resize(scaled_gray, gray.shape)
-        else:
-            scaled_gray = gray
-        
-        # Convolve with Sobel kernels
-        edges_x = ndimage.convolve(scaled_gray, sobel_x)
-        edges_y = ndimage.convolve(scaled_gray, sobel_y)
-        edge_magnitude = np.sqrt(edges_x**2 + edges_y**2)
-        edges_total += edge_magnitude
-    
-    # 1. ULTRA-AGGRESSIVE Oversharpening Detection
-    ultra_sharp_edges = np.sum(edges_total > 150)  # Lower threshold
-    extreme_sharp_edges = np.sum(edges_total > 200)
-    total_pixels = edges_total.size
-    
-    ultra_sharp_ratio = ultra_sharp_edges / total_pixels
-    extreme_sharp_ratio = extreme_sharp_edges / total_pixels
-    
-    if extreme_sharp_ratio > 0.08:  # Very aggressive
-        score += 0.5
-        logger.info(f"⚡ ULTRA AI EDGES: Extreme oversharpening {extreme_sharp_ratio:.4f}")
-    elif ultra_sharp_ratio > 0.12:
-        score += 0.4
-        logger.info(f"⚡ AI EDGES: Ultra oversharpening {ultra_sharp_ratio:.4f}")
-    
-    # 2. NEW: Edge Consistency Analysis (AI creates too-consistent edges)
-    edge_directions = np.arctan2(ndimage.convolve(gray, sobel_y), 
-                                ndimage.convolve(gray, sobel_x))
-    
-    # Quantize directions and check for unnatural consistency
-    quantized_directions = np.round(edge_directions / (np.pi/8)) * (np.pi/8)
-    direction_consistency = len(np.unique(quantized_directions)) / quantized_directions.size
-    
-    if direction_consistency < 0.1:  # Too consistent
-        score += 0.3
-        logger.info(f"⚡ AI EDGES: Unnatural consistency {direction_consistency:.4f}")
-    
-    # 3. NEW: Halo Detection (AI oversharpening creates halos)
-    # Look for bright/dark halos around edges
-    strong_edges = edges_total > np.percentile(edges_total, 90)
-    
-    # Dilate edge mask to find halo regions
-    halo_mask = ndimage.binary_dilation(strong_edges, iterations=2)
-    halo_regions = halo_mask & ~strong_edges
-    
-    if np.sum(halo_regions) > 0:
-        halo_intensity = np.std(gray[halo_regions])
-        if halo_intensity > 15:  # Strong halos
-            score += 0.25
-            logger.info(f"⚡ AI EDGES: Halo artifacts detected {halo_intensity:.1f}")
-    
-    return min(score, 0.6)
-
-def analyze_frequency_signatures_ultra(img_array: np.ndarray) -> float:
-    """ULTRA-ENHANCED frequency domain AI signature detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    try:
-        # Convert to grayscale
-        if len(img_array.shape) == 3:
-            gray = np.mean(img_array, axis=2)
-        else:
-            gray = img_array
-        
-        # Resize for FFT analysis (performance)
-        if gray.shape[0] > 512 or gray.shape[1] > 512:
-            gray = np.array(Image.fromarray(gray.astype(np.uint8)).resize((512, 512)))
-        
-        # 2D FFT
-        fft = np.fft.fft2(gray)
-        fft_shift = np.fft.fftshift(fft)
-        magnitude = np.abs(fft_shift)
-        
-        # Analyze frequency distribution
-        center_y, center_x = magnitude.shape[0] // 2, magnitude.shape[1] // 2
-        
-        # ENHANCED frequency analysis with multiple bands
-        # Low frequency (center)
-        low_freq = magnitude[center_y-30:center_y+30, center_x-30:center_x+30]
-        # Mid frequency (ring around center)
-        mid_freq_outer = magnitude[center_y-80:center_y+80, center_x-80:center_x+80]
-        mid_freq_inner = magnitude[center_y-30:center_y+30, center_x-30:center_x+30]
-        mid_freq = mid_freq_outer.sum() - mid_freq_inner.sum()
-        # High frequency (edges)
-        high_freq = magnitude[:40, :].sum() + magnitude[-40:, :].sum() + magnitude[:, :40].sum() + magnitude[:, -40:].sum()
-        
-        low_energy = np.sum(low_freq)
-        mid_energy = mid_freq
-        high_energy = high_freq
-        
-        total_energy = low_energy + mid_energy + high_energy
-        
-        if total_energy > 0:
-            low_ratio = low_energy / total_energy
-            mid_ratio = mid_energy / total_energy
-            high_ratio = high_energy / total_energy
-            
-            # AI signatures in frequency domain
-            if low_ratio > 0.8:  # Too much low frequency (over-smoothed)
-                score += 0.35
-                logger.info(f"📊 ULTRA AI FREQ: Over-smoothed {low_ratio:.3f}")
-            elif high_ratio > 0.4:  # Too much high frequency (over-sharpened)
-                score += 0.3
-                logger.info(f"📊 ULTRA AI FREQ: Over-sharpened {high_ratio:.3f}")
-            elif mid_ratio < 0.1:  # Missing natural mid frequencies
-                score += 0.25
-                logger.info(f"📊 ULTRA AI FREQ: Missing mid-freq {mid_ratio:.3f}")
-        
-        # NEW: Frequency regularity analysis
-        # AI tends to create regular frequency patterns
-        magnitude_1d = np.mean(magnitude, axis=0)  # Average across rows
-        fft_1d = np.fft.fft(magnitude_1d)
-        power_spectrum = np.abs(fft_1d)
-        
-        # Look for peaks (regularity indicators)
-        peaks = []
-        for i in range(1, len(power_spectrum)-1):
-            if power_spectrum[i] > power_spectrum[i-1] and power_spectrum[i] > power_spectrum[i+1]:
-                if power_spectrum[i] > np.mean(power_spectrum) * 3:
-                    peaks.append(power_spectrum[i])
-        
-        if len(peaks) > 5:  # Too many regular patterns
-            score += 0.2
-            logger.info(f"📊 AI FREQ: Regular patterns detected {len(peaks)}")
-    
-    except Exception as e:
-        logger.warning(f"Ultra frequency analysis failed: {e}")
-    
-    return min(score, 0.4)
-
-def analyze_texture_signatures(img_array: np.ndarray) -> float:
-    """NEW: Texture analysis for AI detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    try:
-        # Convert to grayscale
-        if len(img_array.shape) == 3:
-            gray = np.mean(img_array, axis=2)
-        else:
-            gray = img_array
-        
-        # 1. Local Binary Pattern (LBP) analysis
-        # AI textures have different LBP distributions than natural textures
-        def calculate_lbp(image, radius=1):
-            """Simple LBP calculation"""
-            lbp = np.zeros_like(image)
-            for i in range(radius, image.shape[0] - radius):
-                for j in range(radius, image.shape[1] - radius):
-                    center = image[i, j]
-                    pattern = 0
-                    # 8-neighbor LBP
-                    neighbors = [
-                        image[i-1, j-1], image[i-1, j], image[i-1, j+1],
-                        image[i, j+1], image[i+1, j+1], image[i+1, j],
-                        image[i+1, j-1], image[i, j-1]
-                    ]
-                    for k, neighbor in enumerate(neighbors):
-                        if neighbor >= center:
-                            pattern |= (1 << k)
-                    lbp[i, j] = pattern
-            return lbp
-        
-        # Sample a smaller region for performance
-        sample_size = min(256, min(gray.shape))
-        start_y = (gray.shape[0] - sample_size) // 2
-        start_x = (gray.shape[1] - sample_size) // 2
-        gray_sample = gray[start_y:start_y+sample_size, start_x:start_x+sample_size]
-        
-        lbp = calculate_lbp(gray_sample)
-        lbp_hist, _ = np.histogram(lbp.flatten(), bins=256, range=(0, 256))
-        
-        # AI textures tend to have more uniform LBP distributions
-        lbp_entropy = -np.sum(lbp_hist * np.log(lbp_hist + 1e-10))
-        
-        # Normalize entropy
-        max_entropy = np.log(256)
-        normalized_entropy = lbp_entropy / max_entropy
-        
-        if normalized_entropy < 0.6:  # Too uniform texture
-            score += 0.3
-            logger.info(f"🧩 AI TEXTURE: Low entropy {normalized_entropy:.3f}")
-        
-        # 2. Texture regularity analysis
-        # Calculate texture energy (uniformity measure)
-        texture_energy = np.sum(lbp_hist ** 2) / (sample_size ** 4)
-        
-        if texture_energy > 0.01:  # Too regular
-            score += 0.2
-            logger.info(f"🧩 AI TEXTURE: High regularity {texture_energy:.5f}")
-    
-    except Exception as e:
-        logger.warning(f"Texture analysis failed: {e}")
-    
-    return min(score, 0.3)
-
-def analyze_compression_artifacts(img_array: np.ndarray) -> float:
-    """NEW: Compression artifact analysis for AI detection"""
-    import numpy as np
-    
-    score = 0.0
-    
-    try:
-        # Convert to grayscale
-        if len(img_array.shape) == 3:
-            gray = np.mean(img_array, axis=2)
-        else:
-            gray = img_array
-        
-        # 1. Block artifact detection (8x8 DCT blocks)
-        # AI images often lack natural JPEG compression artifacts
-        block_size = 8
-        block_variances = []
-        
-        for i in range(0, gray.shape[0] - block_size, block_size):
-            for j in range(0, gray.shape[1] - block_size, block_size):
-                block = gray[i:i+block_size, j:j+block_size]
-                
-                # Calculate block boundary discontinuities
-                if i + block_size < gray.shape[0]:
-                    bottom_discontinuity = np.mean(np.abs(block[-1, :] - gray[i+block_size, j:j+block_size]))
-                    block_variances.append(bottom_discontinuity)
-                
-                if j + block_size < gray.shape[1]:
-                    right_discontinuity = np.mean(np.abs(block[:, -1] - gray[i:i+block_size, j+block_size]))
-                    block_variances.append(right_discontinuity)
-        
-        if block_variances:
-            avg_discontinuity = np.mean(block_variances)
-            
-            # AI images are too smooth across block boundaries
-            if avg_discontinuity < 2:
-                score += 0.25
-                logger.info(f"📦 AI COMPRESSION: Too smooth blocks {avg_discontinuity:.2f}")
-        
-        # 2. Quantization artifact detection
-        # Real JPEG images have characteristic quantization patterns
-        # AI images often lack these
-        
-        # Look for 8x8 periodic patterns in frequency domain
-        fft = np.fft.fft2(gray)
-        magnitude = np.abs(fft)
-        
-        # Check for missing quantization frequencies
-        # JPEG typically suppresses certain high frequencies
-        high_freq_pattern = magnitude[magnitude.shape[0]//4:, magnitude.shape[1]//4:]
-        high_freq_energy = np.sum(high_freq_pattern)
-        total_energy = np.sum(magnitude)
-        
-        if total_energy > 0:
-            high_freq_ratio = high_freq_energy / total_energy
-            
-            # AI images often have too much high frequency content (not compressed naturally)
-            if high_freq_ratio > 0.3:
-                score += 0.2
-                logger.info(f"📦 AI COMPRESSION: Unnatural high-freq {high_freq_ratio:.3f}")
-    
-    except Exception as e:
-        logger.warning(f"Compression analysis failed: {e}")
-    
-    return min(score, 0.3)
-
-async def get_detection_details(image: Image.Image, ai_probability: float) -> Dict:
-    """Get detailed detection information"""
-    return {
-        "primary_indicators": [
-            "Dimension analysis",
-            "Color signature detection", 
-            "Noise pattern analysis",
-            "Edge sharpness evaluation",
-            "Frequency domain analysis"
-        ],
-        "confidence_factors": [
-            f"AI probability: {ai_probability:.1%}",
-            f"Image size: {image.size}",
-            f"Aspect ratio: {image.size[0]/image.size[1]:.2f}"
-        ]
-    }
-
-def generate_technical_indicators(ai_prob: float, confidence: float, metadata: Dict, ai_analysis: Dict = None) -> list:
-    """Generate enhanced technical indicators for frontend display"""
-    indicators = []
-    
-    # Enhanced AI Model Analysis
-    detection_details = ai_analysis.get("detection_details", {}) if ai_analysis else {}
-    
-    indicators.append({
-        "name": "Gelişmiş AI Analizi",
-        "score": int(ai_prob * 100),
-        "status": "suspicious" if ai_prob > 0.7 else ("warning" if ai_prob > 0.4 else "normal"),
-        "description": f"Çoklu algoritma analizi: %{int(confidence * 100)} güven",
-        "details": f"5 farklı AI imza analizi: {', '.join(detection_details.get('primary_indicators', [])[:3])}"
-    })
-    
-    # Metadata Analysis
-    ai_tools = metadata.get("ai_tools_detected", [])
-    suspicious_patterns = metadata.get("suspicious_patterns", [])
-    
-    if ai_tools:
-        metadata_score = 95
-        status = "suspicious"
-        desc = f"AI yazılım tespit edildi: {', '.join(ai_tools[:2])}"
-    elif suspicious_patterns:
-        metadata_score = 70
-        status = "warning"
-        desc = f"Şüpheli pattern: {suspicious_patterns[0]}"
-    elif metadata.get("exif_data_present"):
-        metadata_score = 20
-        status = "normal"
-        desc = "Normal kamera metadata'sı mevcut"
-    else:
-        metadata_score = 60
-        status = "warning"
-        desc = "Metadata eksik veya temizlenmiş"
-    
-    indicators.append({
-        "name": "Metadata Analizi",
-        "score": metadata_score,
-        "status": status,
-        "description": desc,
-        "details": f"EXIF: {'Var' if metadata.get('exif_data_present') else 'Yok'}, Şüpheli: {len(suspicious_patterns)}"
-    })
-    
-    # Camera vs Software Analysis
-    camera_make = metadata.get("camera_make")
-    camera_model = metadata.get("camera_model")
-    
-    if camera_make and camera_model:
-        camera_score = 10
-        status = "normal"
-        desc = f"Kamera: {camera_make} {camera_model}"
-        details = "Doğal kamera kaynağı tespit edildi"
-    elif metadata.get("creation_software"):
-        camera_score = 85
-        status = "suspicious"
-        desc = "Yazılım ile oluşturulmuş, kamera bilgisi yok"
-        details = f"Yazılım: {metadata.get('creation_software')}"
-    else:
-        camera_score = 50
-        status = "warning"
-        desc = "Kaynak bilgisi belirsiz"
-        details = "Ne kamera ne de yazılım bilgisi bulunamadı"
-    
-    indicators.append({
-        "name": "Kaynak Analizi",
-        "score": camera_score,
-        "status": status,
-        "description": desc,
-        "details": details
-    })
-    
-    # Dimension Analysis (new)
-    if ai_analysis and ai_analysis.get("analysis_successful"):
-        # Extract dimension info from detection details
-        confidence_factors = detection_details.get("confidence_factors", [])
-        dimension_suspicious = any("512" in factor or "1024" in factor for factor in confidence_factors)
-        
-        dim_score = 80 if dimension_suspicious else 30
-        dim_status = "suspicious" if dimension_suspicious else "normal"
-        dim_desc = "AI tipik boyutları tespit edildi" if dimension_suspicious else "Doğal boyut oranları"
-        
-        indicators.append({
-            "name": "Boyut Analizi",
-            "score": dim_score,
-            "status": dim_status,
-            "description": dim_desc,
-            "details": f"Boyut faktörleri: {len(confidence_factors)} analiz"
-        })
-    
-    # Overall Risk Assessment (new)
-    high_risk_count = sum(1 for ind in indicators if ind["status"] == "suspicious")
-    medium_risk_count = sum(1 for ind in indicators if ind["status"] == "warning")
-    
-    if high_risk_count >= 2:
-        risk_score = 90
-        risk_status = "suspicious"
-        risk_desc = f"Yüksek risk: {high_risk_count} kritik uyarı"
-    elif high_risk_count >= 1 or medium_risk_count >= 2:
-        risk_score = 60
-        risk_status = "warning"
-        risk_desc = f"Orta risk: {high_risk_count} kritik, {medium_risk_count} uyarı"
-    else:
-        risk_score = 20
-        risk_status = "normal"
-        risk_desc = "Düşük risk: Çoğu test normal"
-    
-    indicators.append({
-        "name": "Genel Risk Değerlendirmesi",
-        "score": risk_score,
-        "status": risk_status,
-        "description": risk_desc,
-        "details": f"Toplam {len(indicators)} farklı analiz yapıldı"
-    })
-    
-    return indicators
 
 @app.post("/analyze")
-async def analyze_image(file: UploadFile = File(...)):
-    """Main image analysis endpoint"""
+async def analyze_image(file: UploadFile = File(...), file_chain: str = "unknown"):
+    """
+    Main forensic analysis endpoint
+    
+    Args:
+        file: Image file to analyze
+        file_chain: Source chain (original, whatsapp, instagram, screenshot, unknown)
+    
+    Returns comprehensive forensic report (backward compatible)
+    """
+    start_time = datetime.now()
+    
     try:
-        # Read file content
-        file_content = await file.read()
+        # Validate
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(400, "Invalid file type")
         
-        # Validate image
-        validation_result = validate_image(file_content, file.filename)
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(413, "File too large (max 10MB)")
         
-        # Load image
-        image = Image.open(io.BytesIO(file_content))
+        # Open image
+        try:
+            image = Image.open(io.BytesIO(content))
+            original_format = image.format
+            if image.mode not in ['RGB', 'RGBA', 'L']:
+                image = image.convert('RGB')
+            elif image.mode == 'RGBA':
+                image = image.convert('RGB')
+        except Exception as e:
+            raise HTTPException(400, f"Invalid image: {e}")
         
-        # Check metadata
-        metadata_result = analyze_metadata(file_content)
+        # === PHASE 1: Metadata Extraction ===
+        logger.info("📋 Extracting metadata...")
+        metadata = metadata_extractor.extract_all(content)
         
-        # Analyze with AI model
-        ai_analysis = await analyze_with_ai_model(image)
+        # === PHASE 2: Domain Detection ===
+        logger.info("🔍 Detecting domain...")
+        domain = domain_detector.analyze(image, metadata)
         
-        # Calculate final AI probability (ULTRA-AGGRESSIVE combination)
-        base_probability = ai_analysis["ai_probability"]
+        # Apply file chain penalty
+        if file_chain in ["whatsapp", "instagram"]:
+            domain["characteristics"].append("social_media")
+            domain["confidence_penalty"] += config.DOMAIN_PENALTIES.get("social_media", 0.12)
+            domain["warnings"].append(f"File from {file_chain} - likely recompressed")
         
-        # AGGRESSIVE metadata boosting
-        metadata_boost = 0.0
-        if metadata_result.get("ai_tools_detected"):
-            metadata_boost = 0.4  # Massive boost for detected AI tools
-            logger.info(f"🚨 AI TOOLS DETECTED: {metadata_result['ai_tools_detected']}")
+        # === PHASE 3: JPEG Forensics ===
+        jpeg_result = {}
+        if config.ENABLE_JPEG_FORENSICS:
+            logger.info("🔬 JPEG forensics...")
+            jpeg_result = jpeg_forensics.analyze(content, image)
         
-        suspicious_patterns = metadata_result.get("suspicious_patterns", [])
-        if len(suspicious_patterns) >= 3:
-            metadata_boost += 0.3  # Multiple suspicious patterns
-        elif len(suspicious_patterns) >= 2:
-            metadata_boost += 0.2
-        elif len(suspicious_patterns) >= 1:
-            metadata_boost += 0.1
+        # === PHASE 3.5: Content Type Classification (Photo vs Non-Photo) ===
+        content_type_result = {}
+        if config.ENABLE_NON_PHOTO_GATE and config.ENABLE_CLIP_PROMPT_ENSEMBLE:
+            logger.info("🎭 Content type classification...")
+            content_type_result = content_type_classifier.classify(image)
         
-        # CRITICAL: No camera info but has image = likely AI
-        if not metadata_result.get("camera_make") and not metadata_result.get("camera_model"):
-            if not metadata_result.get("exif_data_present"):
-                metadata_boost += 0.25  # No EXIF at all
-                logger.info("🚨 NO CAMERA INFO: Likely AI generated")
+        # === PHASE 4: AI Detection ===
+        logger.info("🤖 Running AI analysis...")
+        ai_report = await detector.analyze(image, metadata, domain)
+        
+        # === PHASE 5: Statistical Analysis ===
+        stats_result = {}
+        if config.ENABLE_CALIBRATION or config.ENABLE_UNCERTAINTY:
+            logger.info("📊 Statistical analysis...")
+            model_scores = ai_report.get("models", [])
+            stats_result = stats_analyzer.analyze(model_scores, domain)
+        
+        # === PHASE 6: AI Type Classification ===
+        ai_type_result = {}
+        if config.ENABLE_AI_TYPE_CLASSIFIER:
+            logger.info("🎨 AI type classification...")
+            ai_type_result = ai_type_classifier.classify(
+                image, metadata, ai_report.get("models", [])
+            )
+        
+        # === PHASE 6.5: Diffusion Fingerprint + Pathway Classification ===
+        diffusion_result = {}
+        pathway_result = {}
+        
+        if config.ENABLE_PATHWAY_CLASSIFIER:
+            # Run diffusion fingerprint analysis
+            if config.ENABLE_DIFFUSION_FINGERPRINT:
+                logger.info("🔬 Diffusion fingerprint analysis...")
+                diffusion_analyzer = get_diffusion_fingerprint()
+                diffusion_result = diffusion_analyzer.analyze(image)
+        
+        # === PHASE 7: Manipulation Detection + Edit Assessment ===
+        manipulation_result = {}
+        localization_result = {}
+        edit_assessment_result = {}
+        
+        if config.ENABLE_MANIPULATION_MODULES:
+            logger.info("🔍 Manipulation detection...")
+            manipulation_detector = get_manipulation_detector()
+            deep_scan = file_chain == "original"  # Deep scan only for original files
+            manipulation_result = manipulation_detector.analyze(image, deep_scan=deep_scan)
+            
+            # === NEW: Edit Assessment (Global vs Local vs Generator Artifacts) ===
+            logger.info("📊 Edit assessment...")
+            edit_assessor = get_edit_assessor()
+            edit_assessment_result = edit_assessor.assess(
+                image=image,
+                manipulation_result=manipulation_result,
+                domain=domain,
+                content_type=content_type_result,
+                metadata=metadata,
+                pathway_result=pathway_result,  # NEW: pass pathway for AI detection
+                diffusion_result=diffusion_result  # NEW: pass diffusion for generator artifacts
+            )
+            
+            # Build localization result (only show regions if local manipulation)
+            all_regions = []
+            methods_used = []
+            
+            # Use filtered regions from edit assessment if available
+            if edit_assessment_result.get("edit_type") == EditType.LOCAL_MANIPULATION:
+                # Show regions only for confirmed local manipulation
+                filtered_regions = edit_assessment_result.get("filtered_regions", [])
+                all_regions = filtered_regions
+                methods_used = edit_assessment_result.get("corroborated_methods", [])
+            elif edit_assessment_result.get("edit_type") in [EditType.GLOBAL_POSTPROCESS, EditType.GENERATOR_ARTIFACTS]:
+                # Don't show regions for global edits or generator artifacts (they're not splices)
+                all_regions = []
+                methods_used = []
             else:
-                metadata_boost += 0.15  # Has EXIF but no camera
-        
-        # Combine with ULTRA-AGGRESSIVE formula
-        final_probability = min(1.0, base_probability + metadata_boost)
-        
-        # FINAL BOOST: If multiple indicators align
-        if base_probability > 0.6 and metadata_boost > 0.2:
-            final_probability = min(1.0, final_probability * 1.2)
-            logger.info(f"🚨🚨 MULTIPLE STRONG INDICATORS: Final boost applied")
-        
-        logger.info(f"🎯 FINAL CALCULATION: Base={base_probability:.3f} + Metadata={metadata_boost:.3f} = {final_probability:.3f}")
-        
-        # Generate technical indicators with enhanced analysis
-        indicators = generate_technical_indicators(
-            final_probability, 
-            ai_analysis["confidence"], 
-            metadata_result,
-            ai_analysis
-        )
-        
-        # Determine verdict with more aggressive thresholds
-        if final_probability < 0.2:
-            verdict = {
-                "text": "Bu görsel büyük olasılıkla gerçek",
-                "color": "text-green-400",
-                "icon": "check-circle",
-                "bgColor": "bg-green-500/20"
+                # Fallback: collect regions but mark as unconfirmed
+                for method in ["splice", "copy_move", "edge_matte", "blur_noise_mismatch"]:
+                    method_data = manipulation_result.get(method, {})
+                    if method_data.get("regions"):
+                        all_regions.extend(method_data["regions"])
+                        methods_used.append(method)
+            
+            localization_result = {
+                "enabled": True,
+                "top_regions": sorted(all_regions, key=lambda r: -r.get("score", 0))[:10],
+                "methods": methods_used,
+                "notes": [],
+                "edit_type": edit_assessment_result.get("edit_type", "none_detected"),
+                "show_regions": edit_assessment_result.get("edit_type") == EditType.LOCAL_MANIPULATION,
+                "boundary_corroborated": edit_assessment_result.get("boundary_corroborated", False)
             }
-        elif final_probability < 0.35:
-            verdict = {
-                "text": "Görsel muhtemelen gerçek",
-                "color": "text-green-400", 
-                "icon": "check-circle-2",
-                "bgColor": "bg-green-500/20"
-            }
-        elif final_probability < 0.55:
-            verdict = {
-                "text": "Belirsiz - daha fazla analiz gerekebilir",
-                "color": "text-yellow-400",
-                "icon": "alert-triangle", 
-                "bgColor": "bg-yellow-500/20"
-            }
-        elif final_probability < 0.7:
-            verdict = {
-                "text": "Bu görsel AI tarafından üretilmiş olabilir",
-                "color": "text-orange-400",
-                "icon": "alert-circle",
-                "bgColor": "bg-orange-500/20"
-            }
-        else:
-            verdict = {
-                "text": "Bu görsel büyük olasılıkla AI üretimi",
-                "color": "text-red-400",
-                "icon": "x-circle", 
-                "bgColor": "bg-red-500/20"
-            }
+            
+            # Add appropriate notes based on edit type
+            edit_type = edit_assessment_result.get("edit_type", "none_detected")
+            if edit_type == EditType.LOCAL_MANIPULATION:
+                localization_result["notes"].append("Local manipulation evidence detected (boundary-corroborated)")
+            elif edit_type == EditType.GLOBAL_POSTPROCESS:
+                localization_result["notes"].append("Global post-processing detected (filter/color grading)")
+            elif edit_type == EditType.GENERATOR_ARTIFACTS:
+                localization_result["notes"].append("AI generation artifacts detected (not manipulation)")
+            elif manipulation_result.get("overall_score", 0) > 0.5:
+                localization_result["notes"].append("Artifacts detected but not confirmed as manipulation")
         
-        # Calculate confidence (higher for extreme values)
-        confidence_score = int(65 + abs(final_probability - 0.5) * 70)  # More confident scoring
+        # === PHASE 7.3: Visualization Generation ===
+        visualization_result = {}
+        if config.ENABLE_MANIPULATION_MODULES and edit_assessment_result:
+            logger.info("🎨 Generating visualization...")
+            visualizer = get_forensic_visualizer()
+            visualization_result = visualizer.generate_visualization(
+                image=image,
+                edit_assessment=edit_assessment_result,
+                manipulation_result=manipulation_result
+            )
+            logger.info(f"🎨 Visualization mode: {visualization_result.get('mode', 'none')}")
         
-        # Prepare response in frontend-expected format
-        response = {
-            "success": True,
-            "aiProbability": int(final_probability * 100),
-            "confidence": confidence_score,
-            "verdict": verdict,
-            "indicators": indicators,
-            "processingTime": "0.85",  # Simulated processing time
-            "fileSize": f"{validation_result['size_bytes'] / 1024:.1f}",
-            "metadata": {
-                "fileName": file.filename,
-                "fileSize": validation_result['size_bytes'],
-                "fileType": validation_result['mime_type'],
-                "lastModified": datetime.now().strftime('%d.%m.%Y'),
-                "metadata_analysis": metadata_result,
-                "ai_model_analysis": ai_analysis,
-                "final_probability_calculation": {
-                    "base_ai_probability": base_probability,
-                    "metadata_boost": metadata_boost if 'metadata_boost' in locals() else 0,
-                    "final_probability": final_probability
-                }
+        # === PHASE 7.5: Pathway Classification (after manipulation detection) ===
+        if config.ENABLE_PATHWAY_CLASSIFIER:
+            logger.info("🛤️ Pathway classification (T2I vs I2I vs Real)...")
+            pathway_classifier = get_pathway_classifier()
+            pathway_result = pathway_classifier.classify(
+                image=image,
+                diffusion_result=diffusion_result,
+                content_type=content_type_result,
+                manipulation_result=manipulation_result,
+                edit_assessment=edit_assessment_result,
+                metadata=metadata,
+                domain=domain,
+                model_scores=ai_report.get("models", [])
+            )
+            logger.info(f"🛤️ Pathway: {pathway_result.get('pred')} ({pathway_result.get('confidence')})")
+        
+        # === BUILD RESPONSE (Backward Compatible) ===
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        evidence_level = ai_report.get("evidence_level", EvidenceLevel.INCONCLUSIVE)
+        summary_axes = ai_report.get("summary_axes")
+        
+        # Check for inconclusive from statistics (but respect two-axis logic)
+        # Only force INCONCLUSIVE if probability is truly in uncertain range
+        if stats_result.get("inconclusive_reason"):
+            ai_likelihood = summary_axes.get("ai_likelihood", {}) if summary_axes else {}
+            ai_prob = ai_likelihood.get("probability", 0.5)
+            ci = ai_likelihood.get("confidence_interval", [0.3, 0.7])
+            
+            # Only override to INCONCLUSIVE if probability is in uncertain range (0.35-0.65)
+            # AND CI doesn't strongly support a direction
+            if 0.35 <= ai_prob <= 0.65 and ci[0] < 0.55 and ci[1] > 0.45:
+                if evidence_level in [EvidenceLevel.STATISTICAL_AI, EvidenceLevel.STATISTICAL_REAL]:
+                    evidence_level = EvidenceLevel.INCONCLUSIVE
+                    ai_report["recommendation"] = (
+                        f"⚠️ BELİRSİZ: {stats_result['inconclusive_reason']}. "
+                        "Model uyuşmazlığı yüksek ve/veya olasılık belirsiz bölgede."
+                    )
+        
+        verdict_map = {
+            EvidenceLevel.DEFINITIVE_AI: {
+                "text": "KESİN: AI Tarafından Üretilmiş",
+                "text_en": "DEFINITIVE: AI Generated",
+                "color": "red",
+                "icon": "alert-octagon",
+                "is_definitive": True
             },
-            "warning": "Bu analiz bir olasılık tahminidir ve kesin hüküm değildir. Sonuçlar referans amaçlıdır."
+            EvidenceLevel.DEFINITIVE_REAL: {
+                "text": "KESİN: Doğrulanmış Gerçek Fotoğraf",
+                "text_en": "DEFINITIVE: Verified Real Photo",
+                "color": "green",
+                "icon": "shield-check",
+                "is_definitive": True
+            },
+            EvidenceLevel.STRONG_AI_EVIDENCE: {
+                "text": "GÜÇLÜ KANIT: AI Üretimi Muhtemel",
+                "text_en": "STRONG EVIDENCE: Likely AI Generated",
+                "color": "orange",
+                "icon": "alert-triangle",
+                "is_definitive": False
+            },
+            EvidenceLevel.STRONG_REAL_EVIDENCE: {
+                "text": "GÜÇLÜ KANIT: Gerçek Fotoğraf",
+                "text_en": "STRONG EVIDENCE: Likely Real Photo",
+                "color": "green",
+                "icon": "camera",
+                "is_definitive": False
+            },
+            EvidenceLevel.STATISTICAL_AI: {
+                "text": "İSTATİSTİKSEL: AI Olabilir (Belirsiz)",
+                "text_en": "STATISTICAL: Possibly AI (Uncertain)",
+                "color": "yellow",
+                "icon": "bar-chart-2",
+                "is_definitive": False
+            },
+            EvidenceLevel.STATISTICAL_REAL: {
+                "text": "İSTATİSTİKSEL: Gerçek Olabilir",
+                "text_en": "STATISTICAL: Possibly Real",
+                "color": "blue",
+                "icon": "image",
+                "is_definitive": False
+            },
+            EvidenceLevel.INCONCLUSIVE: {
+                "text": "BELİRSİZ: Yeterli Kanıt Yok",
+                "text_en": "INCONCLUSIVE: Insufficient Evidence",
+                "color": "gray",
+                "icon": "help-circle",
+                "is_definitive": False
+            }
         }
         
+        verdict = verdict_map.get(evidence_level, verdict_map[EvidenceLevel.INCONCLUSIVE])
+        
+        # === NON-PHOTO GATE: Override verdict for CGI/Illustration ===
+        ai_probability_informational = False
+        non_photo_override = False
+        
+        if (config.ENABLE_NON_PHOTO_GATE and 
+            content_type_result.get("type") == "non_photo_like" and 
+            content_type_result.get("confidence") == "high"):
+            
+            non_photo_override = True
+            ai_probability_informational = True
+            
+            verdict = {
+                "text": "NON-PHOTO: CGI/İllüstrasyon (Yüksek Güven)",
+                "text_en": "NON-PHOTO: CGI/Illustration (High Confidence)",
+                "color": "purple",
+                "icon": "palette",
+                "is_definitive": False,
+                "category": "non_photo"
+            }
+            evidence_level = "CONTENT_TYPE_NON_PHOTO"
+            
+            ai_report["recommendation"] = (
+                "🎨 Bu görsel CGI/İllüstrasyon olarak tespit edildi. "
+                "AI-vs-gerçek fotoğraf olasılığı bu içerik türü için birincil karar değildir. "
+                "AI olasılığı sadece bilgi amaçlıdır."
+            )
+            
+            logger.info(f"🎭 Non-photo gate triggered: CGI/Illustration detected")
+        
+        # === GENERATE VERDICT TEXT (New UX Layer) ===
+        verdict_text_data = None
+        if config.ENABLE_TWO_AXIS_OUTPUT and config.ENABLE_VERDICT_TEXT:
+            # Build report dict for verdict generator
+            verdict_report = {
+                "ai_probability": ai_report.get("ai_probability", 50),
+                "confidence": ai_report.get("confidence", 30),
+                "uncertainty": ai_report.get("uncertainty", {}),
+                "models": ai_report.get("models", []),
+                "content_type": content_type_result,
+                "domain": domain,
+                "gps": metadata.get("gps", {}),
+                "jpeg_forensics": jpeg_result,
+                "summary_axes": summary_axes,
+                "manipulation": manipulation_result,
+                "edit_assessment": edit_assessment_result,
+                "pathway": pathway_result,  # NEW: Add pathway for T2I/photoreal detection
+                "diffusion_fingerprint": diffusion_result  # NEW: Add diffusion for fingerprint score
+            }
+            verdict_text_data = generate_verdict_text(verdict_report)
+            
+            # Update summary_axes with the computed values from verdict generator
+            if verdict_text_data.get("summary_axes"):
+                summary_axes = verdict_text_data["summary_axes"]
+            
+            logger.info(f"📝 Verdict: {verdict_text_data.get('verdict_key')} - {verdict_text_data.get('title_en')}")
+        
+        # === RESPONSE STRUCTURE (Backward Compatible + New Fields) ===
+        response = {
+            # === EXISTING FIELDS (DO NOT REMOVE) ===
+            "success": True,
+            "report_id": hashlib.md5(content[:1000]).hexdigest()[:12],
+            "timestamp": datetime.now().isoformat(),
+            "processing_time": round(processing_time, 2),
+            
+            "evidence_level": evidence_level,
+            "verdict": verdict,
+            "ai_probability": ai_report.get("ai_probability", 50),
+            "ai_probability_informational": ai_probability_informational,
+            "confidence": ai_report.get("confidence", 30),
+            
+            "models": ai_report.get("models", []),
+            "ensemble": ai_report.get("ensemble", {}),
+            "uncertainty": ai_report.get("uncertainty", {}),
+            
+            "definitive_findings": ai_report.get("definitive_findings", []),
+            "strong_evidence": ai_report.get("strong_evidence", []),
+            "statistical_indicators": ai_report.get("statistical_indicators", []),
+            "authenticity_indicators": ai_report.get("authenticity_indicators", []),
+            
+            "ai_detection": metadata.get("ai_detection", {}),
+            "camera": metadata.get("camera", {}),
+            "gps": metadata.get("gps", {}),
+            
+            "metadata": {
+                "exif_present": bool(metadata.get("exif")),
+                "exif_count": len(metadata.get("exif", {})),
+                "completeness_score": metadata.get("completeness_score", 0),
+                "timestamps": metadata.get("timestamps", {}),
+                "technical": metadata.get("technical", {}),
+                "software": metadata.get("software", {})
+            },
+            
+            "domain": {
+                "type": domain.get("domain_type", "unknown"),
+                "characteristics": domain.get("characteristics", []),
+                "warnings": domain.get("warnings", [])
+            },
+            
+            "image_info": {
+                "width": image.size[0],
+                "height": image.size[1],
+                "format": original_format,
+                "mode": image.mode,
+                "file_size_kb": round(len(content) / 1024, 1)
+            },
+            
+            "recommendation": ai_report.get("recommendation", ""),
+            
+            "warning": (
+                "🎨 Bu görsel CGI/İllüstrasyon gibi görünüyor. AI olasılığı sadece bilgi amaçlıdır."
+                if non_photo_override else
+                (None if verdict.get("is_definitive") else 
+                 None)  # Warnings now handled by verdict_text banner
+            ),
+            
+            # === NEW FIELDS (Progressive Enhancement) ===
+            "content_type": content_type_result if config.ENABLE_NON_PHOTO_GATE else None,
+            
+            # Two-axis output: AI likelihood vs Evidential quality
+            "summary_axes": summary_axes if config.ENABLE_TWO_AXIS_OUTPUT else None,
+            
+            # Verdict text layer (title, subtitle, banner, footer, tags)
+            "verdict_text": verdict_text_data if (config.ENABLE_TWO_AXIS_OUTPUT and config.ENABLE_VERDICT_TEXT) else None,
+            
+            "metadata_extended": {
+                "exif": metadata.get("exif", {}),
+                "xmp": metadata.get("xmp", {}) if config.ENABLE_XMP_IPTC else None,
+                "iptc": metadata.get("iptc", {}) if config.ENABLE_XMP_IPTC else None,
+                "software_history": metadata.get("software_history", []),
+                "format_info": metadata.get("format_info", {})
+            },
+            
+            "jpeg_forensics": jpeg_result if config.ENABLE_JPEG_FORENSICS else None,
+            
+            "statistics": stats_result if (config.ENABLE_CALIBRATION or config.ENABLE_UNCERTAINTY) else None,
+            
+            "ai_generation_type": ai_type_result if config.ENABLE_AI_TYPE_CLASSIFIER else None,
+            
+            # Generation pathway classification (T2I vs I2I vs Real)
+            "pathway": pathway_result if config.ENABLE_PATHWAY_CLASSIFIER else None,
+            "diffusion_fingerprint": diffusion_result if config.ENABLE_DIFFUSION_FINGERPRINT else None,
+            
+            # Manipulation detection and localization
+            "manipulation": manipulation_result if config.ENABLE_MANIPULATION_MODULES else None,
+            "localization": localization_result if config.ENABLE_MANIPULATION_MODULES else None,
+            "edit_assessment": edit_assessment_result if config.ENABLE_MANIPULATION_MODULES else None,
+            "visualization": visualization_result if config.ENABLE_MANIPULATION_MODULES else None,
+            
+            "file_chain": file_chain,
+            
+            "feature_flags": {
+                "jpeg_forensics": config.ENABLE_JPEG_FORENSICS,
+                "xmp_iptc": config.ENABLE_XMP_IPTC,
+                "calibration": config.ENABLE_CALIBRATION,
+                "ai_type": config.ENABLE_AI_TYPE_CLASSIFIER,
+                "non_photo_gate": config.ENABLE_NON_PHOTO_GATE,
+                "clip_prompt_ensemble": config.ENABLE_CLIP_PROMPT_ENSEMBLE,
+                "two_axis_output": config.ENABLE_TWO_AXIS_OUTPUT,
+                "verdict_text": config.ENABLE_VERDICT_TEXT,
+                "manipulation_detection": config.ENABLE_MANIPULATION_MODULES,
+                "pathway_classifier": config.ENABLE_PATHWAY_CLASSIFIER,
+                "diffusion_fingerprint": config.ENABLE_DIFFUSION_FINGERPRINT
+            }
+        }
+        
+        # Remove None values for cleaner response
+        response = {k: v for k, v in response.items() if v is not None}
+        
+        logger.info(f"✅ Analysis complete: {evidence_level} - AI: {ai_report.get('ai_probability')}%")
         return JSONResponse(content=response)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Analysis failed: {str(e)}"
-        )
+        logger.error(f"Analysis error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Analysis error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

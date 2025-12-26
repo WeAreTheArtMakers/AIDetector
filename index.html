@@ -3,117 +3,532 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Image Detector - Yapay Zeka Fotoğraf Algılayıcı</title>
+    <link rel="icon" href="ai-detect.PNG" />
+    <title>AI Image Detector - Forensic Analysis</title>
     
-    <!-- Lucide Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        
+        body { 
+            background: linear-gradient(135deg, #0a0f1a 0%, #111827 50%, #0a0f1a 100%); 
+            min-height: 100vh;
+        }
+        
+        .glass { 
+            background: rgba(17, 24, 39, 0.6); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(75, 85, 99, 0.3); 
+        }
+        
+        .glass-light {
+            background: rgba(31, 41, 55, 0.5);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(75, 85, 99, 0.2);
+        }
+        
+        .upload-zone { 
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+            border: 2px dashed rgba(99, 102, 241, 0.3); 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+        .upload-zone:hover, .upload-zone.drag-over { 
+            border-color: #818cf8; 
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            transform: translateY(-2px);
+        }
+        
+        .score-ring { transform: rotate(-90deg); }
+        .score-ring circle { transition: stroke-dashoffset 1s ease-out; }
+        
+        .verdict-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 9999px; font-weight: 600; font-size: 0.875rem; }
+        .verdict-red { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .verdict-green { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+        .verdict-orange { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+        .verdict-yellow { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); }
+        .verdict-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .verdict-gray { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+        .verdict-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+        
+        .progress-bar { background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7); }
+        
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .slide-up { animation: slideUp 0.6s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .accordion-content.open { max-height: 2000px; }
+        .accordion-toggle .chevron { transition: transform 0.3s; }
+        .accordion-toggle.open .chevron { transform: rotate(180deg); }
+        
+        .lang-btn { transition: all 0.2s; }
+        .lang-btn:hover { background: rgba(99, 102, 241, 0.2); }
+        .lang-btn.active { background: rgba(99, 102, 241, 0.3); color: #a5b4fc; }
+        
+        .feature-card {
+            background: linear-gradient(135deg, rgba(31, 41, 55, 0.5) 0%, rgba(17, 24, 39, 0.5) 100%);
+            border: 1px solid rgba(75, 85, 99, 0.2);
+            transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-4px);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .glow-border {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.15), 0 0 40px rgba(139, 92, 246, 0.1);
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.6) 100%);
+        }
+        
+        @media (max-width: 768px) {
+            .hero-title { font-size: 1.75rem !important; }
+            .feature-grid { grid-template-columns: 1fr !important; }
+        }
+    </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-    <!-- Background Pattern -->
-    <div class="fixed inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.03"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-50"></div>
-    
-    <div class="relative z-10 container mx-auto px-4 py-8">
-        <!-- Header -->
-        <header class="text-center mb-12">
-            <div class="flex items-center justify-center mb-4">
-                <i data-lucide="brain-circuit" class="w-12 h-12 text-blue-400 mr-3"></i>
-                <h1 class="text-4xl md:text-5xl font-bold">
-                    <span class="text-blue-400">AI Image</span>
-                    <span class="text-white"> Detector</span>
-                </h1>
-            </div>
-            <p class="text-slate-300 text-lg max-w-2xl mx-auto">
-                Fotoğrafınızın yapay zeka tarafından üretilip üretilmediğini gelişmiş algoritmalarla tespit edin
-            </p>
-        </header>
+<body class="text-gray-200 antialiased">
+    <!-- Background Effects -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[100px]"></div>
+        <div class="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-[100px]"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/3 rounded-full blur-[120px]"></div>
+    </div>
 
-        <!-- Main Card -->
-        <div class="max-w-4xl mx-auto">
-            <div class="glass-card backdrop-blur-xl bg-glass border border-glass-border rounded-2xl p-8 shadow-2xl">
-                
-                <!-- Upload Area -->
-                <div id="uploadArea" class="upload-area border-2 border-dashed border-slate-600 rounded-xl p-12 text-center transition-all duration-300 hover:border-blue-400 hover:bg-slate-800/30 cursor-pointer">
-                    <div id="uploadContent">
-                        <i data-lucide="upload-cloud" class="w-16 h-16 text-slate-400 mx-auto mb-4"></i>
-                        <h3 class="text-xl font-semibold mb-2">Fotoğrafınızı Yükleyin</h3>
-                        <p class="text-slate-400 mb-6">Dosyayı buraya sürükleyin veya tıklayarak seçin</p>
-                        <button id="selectFileBtn" class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors">
-                            <i data-lucide="folder-open" class="w-5 h-5 mr-2"></i>
-                            Dosya Seç
-                        </button>
-                        <p class="text-sm text-slate-500 mt-4">Desteklenen formatlar: JPG, PNG, WebP (Max: 10MB)</p>
+    <div class="relative z-10 min-h-screen">
+        <!-- Header -->
+        <header class="sticky top-0 z-50 glass-light border-b border-gray-800/50">
+            <div class="max-w-6xl mx-auto px-4 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                            <i data-lucide="scan-eye" class="w-5 h-5 text-white"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg font-bold text-white">AI Image Detector</h1>
+                            <p class="text-xs text-gray-400 hidden sm:block">Forensic Analysis Platform</p>
+                        </div>
                     </div>
                     
-                    <!-- Image Preview -->
-                    <div id="imagePreview" class="hidden">
-                        <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-lg mb-4" alt="Önizleme">
-                        <div class="flex items-center justify-center space-x-4">
-                            <span id="fileName" class="text-slate-300"></span>
-                            <button id="removeImage" class="text-red-400 hover:text-red-300 transition-colors">
-                                <i data-lucide="x-circle" class="w-5 h-5"></i>
+                    <!-- Language Toggle -->
+                    <div class="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">
+                        <button id="langTR" class="lang-btn px-3 py-1.5 rounded-md text-xs font-semibold active">TR</button>
+                        <button id="langEN" class="lang-btn px-3 py-1.5 rounded-md text-xs font-semibold">EN</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-6xl mx-auto px-4 py-8">
+            
+            <!-- Hero Section (Visible before upload) -->
+            <section id="heroSection" class="mb-10 slide-up">
+                <div class="text-center mb-10">
+                    <h2 class="hero-title text-3xl md:text-4xl font-extrabold mb-4">
+                        <span class="gradient-text" data-i18n="hero_title">Kanıta Dayalı AI Görsel Analizi</span>
+                    </h2>
+                    <p class="text-gray-400 max-w-2xl mx-auto text-sm md:text-base leading-relaxed" data-i18n="hero_subtitle">
+                        Multi-model ensemble, CLIP semantik analizi ve adli metadata doğrulaması ile görsellerin AI tarafından üretilip üretilmediğini tespit edin.
+                    </p>
+                </div>
+                
+                <!-- Features Grid -->
+                <div class="feature-grid grid md:grid-cols-3 gap-4 mb-10">
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="brain" class="w-5 h-5 text-indigo-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_ensemble">Multi-Model Ensemble</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_ensemble_desc">Birden fazla AI tespit modeli ile güvenilir sonuçlar ve belirsizlik ölçümü.</p>
+                    </div>
+                    
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="file-search" class="w-5 h-5 text-purple-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_forensic">Adli Metadata Analizi</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_forensic_desc">EXIF, XMP, IPTC, GPS ve kamera bilgileri ile kapsamlı doğrulama.</p>
+                    </div>
+                    
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-pink-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="palette" class="w-5 h-5 text-pink-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_content">İçerik Türü Tespiti</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_content_desc">Fotoğraf, CGI, illüstrasyon ve dijital sanat ayrımı.</p>
+                    </div>
+                </div>
+                
+                <!-- Stats -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <p class="text-2xl font-bold text-indigo-400">3+</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_models">AI Modeli</p>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <p class="text-2xl font-bold text-purple-400">50+</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_metadata">Metadata Alanı</p>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <p class="text-2xl font-bold text-pink-400">CLIP</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_semantic">Semantik Analiz</p>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <p class="text-2xl font-bold text-cyan-400">GPS</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_gps">Konum Doğrulama</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Upload Section -->
+            <section class="glass rounded-3xl p-6 md:p-8 mb-8 glow-border">
+                <!-- Warning Banner -->
+                <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 mb-6 flex items-start gap-3">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                    <p class="text-xs text-amber-200/80" data-i18n="upload_warning">Orijinal dosyayı yükleyin. WhatsApp/Instagram yeniden sıkıştırır ve EXIF verilerini silebilir.</p>
+                </div>
+                
+                <div id="uploadZone" class="upload-zone rounded-2xl p-10 md:p-12 text-center cursor-pointer">
+                    <div id="uploadContent">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="image-plus" class="w-8 h-8 text-indigo-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white text-lg mb-2" data-i18n="upload_title">Görsel Yükle</h3>
+                        <p class="text-gray-400 text-sm mb-4" data-i18n="upload_hint">Sürükle bırak veya tıkla</p>
+                        <button id="selectBtn" class="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
+                            <i data-lucide="folder-open" class="w-4 h-4 inline mr-2"></i><span data-i18n="select_file">Dosya Seç</span>
+                        </button>
+                        <p class="text-xs text-gray-500 mt-4" data-i18n="file_types">JPG, PNG, WebP, HEIC • Max 10MB</p>
+                    </div>
+                    <div id="previewContent" class="hidden">
+                        <img id="previewImg" class="max-h-56 mx-auto rounded-xl shadow-2xl mb-4" alt="Preview">
+                        <div class="flex items-center justify-center gap-3">
+                            <span id="fileName" class="text-sm text-gray-300 font-medium"></span>
+                            <button id="removeBtn" class="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors">
+                                <i data-lucide="x" class="w-4 h-4"></i>
                             </button>
                         </div>
                     </div>
                 </div>
+                
+                <!-- File Chain Selector -->
+                <div id="fileChainSection" class="hidden mt-5">
+                    <label class="text-xs text-gray-400 mb-2 block font-medium" data-i18n="file_chain_label">Dosya Kaynağı (Opsiyonel)</label>
+                    <select id="fileChainSelect" class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all">
+                        <option value="unknown" data-i18n="chain_unknown">Bilinmiyor</option>
+                        <option value="original" data-i18n="chain_original">Kamera / Orijinal</option>
+                        <option value="whatsapp" data-i18n="chain_whatsapp">WhatsApp</option>
+                        <option value="instagram" data-i18n="chain_instagram">Instagram</option>
+                        <option value="screenshot" data-i18n="chain_screenshot">Ekran Görüntüsü</option>
+                    </select>
+                </div>
+                
+                <div id="analyzeSection" class="hidden mt-6 text-center">
+                    <button id="analyzeBtn" class="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-500/25 text-white">
+                        <i data-lucide="scan" class="w-5 h-5 inline mr-2"></i><span data-i18n="analyze_btn">Forensic Analiz Başlat</span>
+                    </button>
+                </div>
+            </section>
 
-                <!-- Analysis Section -->
-                <div id="analysisSection" class="hidden mt-8">
-                    <!-- Analyze Button -->
-                    <div class="text-center mb-8">
-                        <button id="analyzeBtn" class="inline-flex items-center px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 rounded-xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg">
-                            <i data-lucide="search" class="w-6 h-6 mr-3"></i>
-                            Analiz Et
-                        </button>
+            <!-- Progress Section -->
+            <section id="progressSection" class="hidden glass rounded-2xl p-6 mb-8 fade-in">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                        <i data-lucide="loader-2" class="w-5 h-5 text-indigo-400 animate-spin"></i>
                     </div>
+                    <span id="progressText" class="text-gray-300 text-sm font-medium">Analiz ediliyor...</span>
+                </div>
+                <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="progressBar" class="h-full progress-bar rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </section>
 
-                    <!-- Progress Bar -->
-                    <div id="progressSection" class="hidden mb-8">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm font-medium">Analiz Ediliyor...</span>
-                            <span id="progressText" class="text-sm text-slate-400">0%</span>
+            <!-- Results Section (Hidden until analysis) -->
+            <section id="resultsSection" class="hidden fade-in space-y-6">
+                
+                <!-- Main Result Card -->
+                <div class="glass rounded-3xl p-6 md:p-8 glow-border">
+                    <div class="flex flex-col lg:flex-row gap-6 items-center lg:items-start">
+                        <!-- Score Ring -->
+                        <div class="flex-shrink-0">
+                            <div class="relative">
+                                <svg class="w-32 h-32 score-ring" viewBox="0 0 120 120">
+                                    <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(75,85,99,0.3)" stroke-width="10"/>
+                                    <circle id="scoreCircle" cx="60" cy="60" r="52" fill="none" stroke="#6366f1" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.726" stroke-dashoffset="326.726"/>
+                                </svg>
+                                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                    <span id="scoreValue" class="text-3xl font-bold text-white">0</span>
+                                    <span class="text-xs text-gray-400" data-i18n="ai_probability">AI %</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-3">
-                            <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        
+                        <!-- Verdict & Stats -->
+                        <div class="flex-1 text-center lg:text-left">
+                            <div id="verdictBadge" class="verdict-badge verdict-gray mb-3 inline-flex">
+                                <i id="verdictIcon" data-lucide="help-circle" class="w-4 h-4"></i>
+                                <span id="verdictText">Analiz Bekleniyor</span>
+                            </div>
+                            <p id="evidenceLevelText" class="text-xs text-gray-400 mb-2" data-i18n="evidence_level">Kanıt Seviyesi</p>
+                            <p id="verdictSubtitle" class="hidden text-sm text-gray-300 mb-3"></p>
+                            <div id="verdictTags" class="hidden flex flex-wrap gap-2 mb-4"></div>
+                            
+                            <!-- Quick Stats -->
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="stat-card rounded-xl p-3 text-center">
+                                    <p id="confidenceValue" class="text-lg font-bold text-indigo-400">0%</p>
+                                    <p class="text-xs text-gray-500" data-i18n="confidence">Güven</p>
+                                </div>
+                                <div class="stat-card rounded-xl p-3 text-center">
+                                    <p id="processingTime" class="text-lg font-bold text-purple-400">0s</p>
+                                    <p class="text-xs text-gray-500" data-i18n="processing_time">Süre</p>
+                                </div>
+                                <div class="stat-card rounded-xl p-3 text-center">
+                                    <p id="reportId" class="text-sm font-mono text-gray-300">-</p>
+                                    <p class="text-xs text-gray-500" data-i18n="report_id">Rapor ID</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
+                    
+                    <!-- Content Type Badge -->
+                    <div id="contentTypeContainer" class="hidden mt-6"></div>
+                    
+                    <!-- Two-Axis Summary (AI Likelihood + Evidential Quality) -->
+                    <div id="summaryAxesContainer" class="hidden mt-6"></div>
+                    
+                    <!-- Uncertainty -->
+                    <div id="uncertaintyContainer" class="mt-6 p-4 bg-gray-800/30 rounded-xl"></div>
+                    
+                    <!-- Warning Banner -->
+                    <div id="warningBanner" class="hidden mt-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+                        <div class="flex items-start gap-3">
+                            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400 flex-shrink-0"></i>
+                            <p id="warningText" class="text-sm text-amber-200/90"></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Recommendation -->
+                    <div class="mt-6 p-4 bg-gradient-to-r from-indigo-500/5 to-purple-500/5 border border-indigo-500/10 rounded-xl">
+                        <h4 class="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-2">
+                            <i data-lucide="lightbulb" class="w-4 h-4 text-yellow-400"></i>
+                            <span data-i18n="evaluation">Değerlendirme</span>
+                        </h4>
+                        <p id="recommendation" class="text-sm text-gray-300 leading-relaxed"></p>
+                    </div>
+                </div>
 
-                    <!-- Results -->
-                    <div id="resultsSection" class="hidden">
-                        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-                            <h3 class="text-xl font-semibold mb-4 flex items-center">
-                                <i data-lucide="bar-chart-3" class="w-6 h-6 mr-2 text-blue-400"></i>
-                                Analiz Sonuçları
-                            </h3>
-                            
-                            <div id="resultContent" class="space-y-4">
-                                <!-- Results will be populated by JavaScript -->
-                            </div>
-                            
-                            <div class="mt-6 pt-4 border-t border-slate-700">
-                                <button id="analyzeAgain" class="inline-flex items-center px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
-                                    <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
-                                    Yeni Analiz
-                                </button>
-                            </div>
+                <!-- Model Scores -->
+                <div class="glass rounded-2xl p-5">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                        <i data-lucide="brain" class="w-4 h-4 text-purple-400"></i>
+                        <span data-i18n="model_scores">Model Skorları (Ensemble)</span>
+                    </h4>
+                    <div id="modelScoresContainer"></div>
+                </div>
+
+                <!-- Two Column Grid -->
+                <div class="grid lg:grid-cols-2 gap-6">
+                    <!-- Findings -->
+                    <div class="glass rounded-2xl p-5">
+                        <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                            <i data-lucide="file-search" class="w-4 h-4 text-blue-400"></i>
+                            <span data-i18n="findings">Bulgular</span>
+                        </h4>
+                        <div id="findingsContainer"></div>
+                    </div>
+                    
+                    <!-- GPS -->
+                    <div class="glass rounded-2xl p-5">
+                        <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-cyan-400"></i>
+                            <span data-i18n="gps_location">GPS / Konum (EXIF)</span>
+                        </h4>
+                        <div id="gpsContainer"></div>
+                    </div>
+                </div>
+
+                <!-- Three Column Grid -->
+                <div class="grid md:grid-cols-3 gap-6">
+                    <!-- Camera -->
+                    <div class="glass rounded-2xl p-5">
+                        <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                            <i data-lucide="camera" class="w-4 h-4 text-green-400"></i>
+                            <span data-i18n="camera_info">Kamera</span>
+                        </h4>
+                        <div id="cameraContainer"></div>
+                    </div>
+                    
+                    <!-- AI Detection -->
+                    <div class="glass rounded-2xl p-5">
+                        <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                            <i data-lucide="cpu" class="w-4 h-4 text-red-400"></i>
+                            <span data-i18n="ai_software">AI Yazılım</span>
+                        </h4>
+                        <div id="aiDetectionContainer"></div>
+                    </div>
+                    
+                    <!-- Domain -->
+                    <div class="glass rounded-2xl p-5">
+                        <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                            <i data-lucide="layers" class="w-4 h-4 text-orange-400"></i>
+                            <span data-i18n="domain_info">Domain</span>
+                        </h4>
+                        <div id="domainContainer"></div>
+                    </div>
+                </div>
+
+                <!-- Advanced Sections (Accordion) -->
+                <div class="glass rounded-2xl overflow-hidden">
+                    <!-- Manipulation Detection -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="manipulationContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="scan-search" class="w-4 h-4 text-red-400"></i>
+                                <span data-i18n="manipulation_section">Manipülasyon Tespiti</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="manipulationContent" class="accordion-content px-5 pb-5">
+                            <div id="manipulationContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Visualization / Heatmap Overlay -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="visualizationContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i>
+                                <span data-i18n="visualization_section">Görselleştirme</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="visualizationContent" class="accordion-content px-5 pb-5">
+                            <div id="visualizationContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- JPEG Forensics -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="jpegForensicsContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="file-image" class="w-4 h-4 text-teal-400"></i>
+                                <span data-i18n="jpeg_forensics">JPEG Forensics</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="jpegForensicsContent" class="accordion-content px-5 pb-5">
+                            <div id="jpegForensicsContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Type -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="aiTypeContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="wand-2" class="w-4 h-4 text-pink-400"></i>
+                                <span data-i18n="ai_type_section">AI Üretim Tipi</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="aiTypeContent" class="accordion-content px-5 pb-5">
+                            <div id="aiTypeContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generation Pathway (T2I vs I2I vs Real) -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="pathwayContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="git-branch" class="w-4 h-4 text-violet-400"></i>
+                                <span data-i18n="pathway_section">Üretim Yolu (T2I/I2I/Real)</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="pathwayContent" class="accordion-content px-5 pb-5">
+                            <div id="pathwayContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Statistics -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="statisticsContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="bar-chart-3" class="w-4 h-4 text-indigo-400"></i>
+                                <span data-i18n="uncertainty_section">Belirsizlik Analizi</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="statisticsContent" class="accordion-content px-5 pb-5">
+                            <div id="statisticsContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Extended Metadata -->
+                    <div>
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="metadataContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="database" class="w-4 h-4 text-amber-400"></i>
+                                <span data-i18n="metadata_section">Metadata (EXIF/XMP/IPTC)</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="metadataContent" class="accordion-content px-5 pb-5">
+                            <div id="metadataContainer"></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Hidden File Input -->
-                <input type="file" id="fileInput" accept="image/*" class="hidden">
-            </div>
-        </div>
+                <!-- Image Info -->
+                <div class="glass rounded-2xl p-5">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                        <i data-lucide="image" class="w-4 h-4 text-gray-400"></i>
+                        <span data-i18n="image_info">Görsel Bilgileri</span>
+                    </h4>
+                    <div id="imageInfoContainer"></div>
+                </div>
+
+                <!-- New Analysis Button -->
+                <div class="text-center pt-4">
+                    <button id="newAnalysisBtn" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl text-sm font-medium transition-all">
+                        <i data-lucide="refresh-cw" class="w-4 h-4 inline mr-2"></i>
+                        <span data-i18n="new_analysis">Yeni Analiz</span>
+                    </button>
+                </div>
+                
+                <!-- Global Footer (probabilistic disclaimer) -->
+                <div class="mt-6 pt-4 border-t border-gray-700/30">
+                    <p id="globalFooter" class="text-xs text-gray-500 text-center"></p>
+                </div>
+            </section>
+        </main>
 
         <!-- Footer -->
-        <footer class="text-center mt-12 text-slate-400">
-            <p>&copy; 2025 AI Image Detector. Açık kaynak projesi.</p>
+        <footer class="border-t border-gray-800/50 mt-12 py-6">
+            <div class="max-w-6xl mx-auto px-4 text-center">
+                <p class="text-xs text-gray-500">AI Image Detector • Forensic Analysis Platform • v6.4</p>
+            </div>
         </footer>
     </div>
 
-    <!-- JavaScript -->
+    <input type="file" id="fileInput" accept="image/*" class="hidden">
+    <script src="language-manager.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

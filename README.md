@@ -1,261 +1,301 @@
-# 🤖 AI Image Detector
+# 🔬 AI Image Detector - Forensic Analysis Platform
 
 [![License: WATAM](https://img.shields.io/badge/License-WATAM-blue.svg)](https://WeAreTheArtMakers.com)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.35+-orange.svg)](https://huggingface.co/transformers/)
 
-Modern ve gelişmiş **AI Image Detector** - Yapay zeka tarafından üretilen görselleri tespit eden web uygulaması. Gelişmiş bilgisayarlı görü teknikleri ve makine öğrenmesi modelleri ile %90+ doğruluk oranında AI detection.
+A production-grade **forensic image analysis platform** for detecting AI-generated images. Features multi-model ensemble detection, CLIP semantic analysis, manipulation detection with heatmap visualization, and comprehensive metadata forensics.
 
+<<<<<<< HEAD
 ## ✨ Özellikler
+=======
+![AI Image Detector](ai-detect.PNG)
 
-### 🔬 Gelişmiş AI Tespit Teknolojileri
-- **🧠 Çoklu AI Model Analizi**: HuggingFace transformers ile derin öğrenme
-- **📐 Boyut İmza Analizi**: 512x512, 1024x1024 gibi tipik AI boyutları tespiti
-- **🎨 Renk İmza Tespiti**: Aşırı doygunluk, quantization, perfect gradients
-- **🔍 Gürültü Analizi**: AI'ın tipik "çok temiz" görüntü imzası
-- **⚡ Kenar Analizi**: Sobel operatörü ile unnatural sharpening tespiti
-- **📊 Frekans Domain Analizi**: FFT ile frequency anomalileri
+## ✨ Key Features
+>>>>>>> 2646f34 (feat: forensic pipeline + improved UI wording and setup scripts)
 
-### 🛡️ Metadata & Kaynak Analizi
-- **🏷️ AI Yazılım Tespiti**: 20+ AI tool imzası (Midjourney, DALL-E, Stable Diffusion, vb.)
-- **📷 EXIF Analizi**: Kamera vs yazılım kaynak tespiti
-- **🔍 Şüpheli Desen Tespiti**: Perfect dimensions, missing camera info
-- **📋 Content Credentials**: C2PA metadata kontrolü (gelecek özellik)
+### 🧠 Multi-Model Ensemble AI Detection
+- **Ensemble Analysis**: Multiple AI detection models with uncertainty quantification
+- **CLIP Semantic Analysis**: Content type classification (photo vs CGI/illustration)
+- **Calibrated Probabilities**: Confidence intervals and model agreement metrics
+- **Two-Axis Output**: AI likelihood + evidential quality scoring
 
-### 🎨 Modern UI/UX
-- **🌙 Dark Mode**: Glassmorphism efektli modern tasarım
-- **📱 Responsive**: Mobil ve masaüstü uyumlu
-- **🎯 Sürükle & Bırak**: Kolay dosya yükleme
-- **⚡ Real-time**: Anlık analiz sonuçları
-- **📊 Detaylı Raporlama**: 5 farklı teknik analiz gösterimi
+### � Advkanced Forensic Analysis
+- **Diffusion Fingerprint Detection**: Identifies diffusion model artifacts in frequency domain
+- **Generation Pathway Classification**: T2I vs I2I vs Real Photo with evidence-based gating
+- **JPEG Forensics**: Double compression detection, quantization fingerprinting
+- **Manipulation Detection**: Copy-move, splice, edge matte, blur/noise mismatch
 
-### 🔧 Teknik Özellikler
-- **🚀 FastAPI Backend**: Yüksek performanslı API
-- **🤖 HuggingFace Integration**: Önceden eğitilmiş modeller
-- **🔄 Fallback System**: Backend çalışmazsa yerel analiz
-- **🐳 Docker Ready**: Kolay deployment
-- **📈 Scalable**: Production-ready mimari
+### 🎨 Forensic Visualization
+- **Heatmap Overlays**: Visual representation of detected anomalies
+- **Global Edit Mode**: Shows processing intensity for filters/color grading
+- **Local Manipulation Mode**: Highlights boundary-corroborated suspicious regions
+- **Deterministic Generation**: SHA256 hashes for integrity verification
 
-## 🚀 Hızlı Başlangıç
+### 📊 Edit Assessment System
+- **3-Way Edit Taxonomy**: `none_detected`, `global_postprocess`, `local_manipulation`, `generator_artifacts`
+- **Boundary Corroboration**: Local manipulation requires edge_matte/copy_move/inpainting evidence ≥0.60
+- **False Positive Prevention**: Noise inconsistency alone does NOT trigger composite labels
+- **AI Generation Artifacts**: Distinguishes AI texture artifacts from true manipulation
 
-### 📋 Gereksinimler
+### � ️ Metadata & Provenance
+- **EXIF/XMP/IPTC Extraction**: Comprehensive metadata analysis
+- **GPS Verification**: Location data with confidence scoring
+- **Camera Evidence**: CFA artifacts, PRNU proxy, camera settings
+- **AI Software Detection**: 20+ AI tool signatures (Midjourney, DALL-E, Stable Diffusion, etc.)
+
+### 🌐 Internationalization
+- **Bilingual Support**: Turkish (TR) and English (EN)
+- **Dynamic Language Switching**: Real-time UI translation
+- **Localized Verdicts**: Evidence-based verdict text in both languages
+
+## 🏗️ Architecture
+
+```
+ai-image-detector/
+├── backend/
+│   ├── main.py                    # FastAPI application
+│   ├── forensic/
+│   │   ├── ai_detector.py         # Multi-model ensemble
+│   │   ├── content_type.py        # CLIP-based content classification
+│   │   ├── diffusion_fingerprint.py # Diffusion model detection
+│   │   ├── pathway_classifier.py  # T2I/I2I/Real classification
+│   │   ├── manipulation.py        # Manipulation detection
+│   │   ├── edit_assessment.py     # Edit type taxonomy
+│   │   ├── visualization.py       # Heatmap generation
+│   │   ├── verdict_generator.py   # Evidence-based verdicts
+│   │   ├── metadata.py            # EXIF/XMP/IPTC extraction
+│   │   ├── jpeg_forensics.py      # JPEG analysis
+│   │   ├── statistics.py          # Calibration & uncertainty
+│   │   └── config.py              # Feature flags
+│   └── requirements.txt
+├── index.html                     # Frontend UI
+├── script.js                      # Analysis display logic
+├── style.css                      # Modern dark theme
+├── language-manager.js            # i18n support
+└── docker-compose.yml
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
 - Python 3.8+
-- 1GB+ RAM
-- 2GB+ disk alanı (model dosyaları için)
-- İnternet bağlantısı (ilk kurulum için)
+- 4GB+ RAM (8GB recommended for full model ensemble)
+- CUDA-capable GPU (optional, for faster inference)
 
-### ⚡ Otomatik Kurulum
+### Installation
+
 ```bash
-# Repository'yi klonla
+# Clone repository
 git clone https://github.com/yourusername/ai-image-detector.git
 cd ai-image-detector
 
-# Sanal ortam kur ve başlat
+# Setup virtual environment
 ./setup_venv.sh          # macOS/Linux
-# veya
+# or
 setup_venv.bat           # Windows
 
-# Uygulamayı çalıştır
-./run_backend_venv.sh    # Terminal 1 - Backend
-./run_frontend.sh        # Terminal 2 - Frontend
+# Start backend
+./run_backend_venv.sh    # Terminal 1
+
+# Start frontend (separate terminal)
+./run_frontend.sh        # Terminal 2
 ```
 
-### 🌐 Erişim
+### Access
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8001
-- **API Docs**: http://localhost:8001/docs
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
 
-## 📊 Performans & Doğruluk
+## 📡 API Reference
 
-| Görsel Türü | Tespit Doğruluğu | Ortalama Süre |
-|--------------|-------------------|---------------|
-| AI Üretimi (Midjourney, DALL-E) | %85-95 | 1-2 saniye |
-| Gerçek Fotoğraflar | %90-95 | 1-2 saniye |
-| Upscaled/Enhanced | %70-85 | 1-3 saniye |
-| Hibrit/Edited | %60-80 | 2-3 saniye |
+### POST /analyze
+Analyze an image for AI generation and manipulation.
 
-## 🔍 Desteklenen AI Araçları
-
-### ✅ Yüksek Tespit Oranı (%85+)
-- **Midjourney** (v4, v5, v6, Niji)
-- **DALL-E** (2, 3, ChatGPT integration)
-- **Stable Diffusion** (1.5, 2.0, XL, Turbo)
-- **Adobe Firefly** (v1, v2, v3)
-- **Leonardo AI** (Phoenix, Alchemy)
-- **Google Gemini** (Imagen, Bard integration)
-- **Microsoft Copilot** (Designer, Bing Creator)
-
-### ⚠️ Orta Tespit Oranı (%60-85%)
-- **Runway ML** (Gen-1, Gen-2)
-- **Artbreeder** (Collage, Splicer)
-- **NightCafe** (Stable, Artistic)
-- **DeepAI** (Text2Img, StyleGAN)
-- **Canva AI** (Magic Design)
-- **Meta AI** (Imagine, Emu)
-- **Pika Labs** (Video-to-Image)
-
-### 📝 2024 Yeni Araçlar (%70-90%)
-- **Sora** (OpenAI Video AI)
-- **Ideogram** (Text rendering AI)
-- **Flux** (Black Forest Labs)
-- **Recraft** (Vector AI)
-- **Freepik AI** (Pikaso)
-- **Adobe Express** (Generative AI)
-- **Anthropic Claude** (Vision capabilities)
-
-## 🛠️ Geliştirici Rehberi
-
-### 📁 Proje Yapısı
-```
-ai-image-detector/
-├── 📂 backend/
-│   ├── main.py              # FastAPI uygulaması
-│   ├── requirements.txt     # Python bağımlılıkları
-│   └── models/              # Model cache (otomatik oluşur)
-├── 📂 frontend/
-│   ├── index.html          # Ana sayfa
-│   ├── style.css           # Modern CSS (Glassmorphism)
-│   └── script.js           # Vanilla JS (ES6+)
-├── 📂 docs/
-│   ├── SETUP.md            # Kurulum rehberi
-│   └── DISCLAIMER.md       # Sorumluluk reddi
-├── 🚀 setup_venv.sh       # Otomatik kurulum
-└── 📋 requirements.txt     # Tüm bağımlılıklar
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/analyze?file_chain=original" \
+  -F "file=@image.jpg"
 ```
 
-### 🔧 API Kullanımı
-```python
-import requests
-
-# Görsel analizi
-with open('image.jpg', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8001/analyze',
-        files={'file': f}
-    )
-    
-result = response.json()
-print(f"AI Olasılığı: %{result['aiProbability']}")
-```
-
-### 🎯 Model Değiştirme
-```python
-# backend/main.py içinde
-MODEL_CONFIG = {
-    "model_name": "your-custom-model",  # Değiştir
-    "device": "cuda",  # GPU kullanımı için
-    "max_image_size": (1024, 1024)
+**Response Schema:**
+```json
+{
+  "success": true,
+  "report_id": "abc123",
+  "evidence_level": "STRONG_AI_EVIDENCE",
+  "ai_probability": 78,
+  "confidence": 65,
+  
+  "verdict_text": {
+    "verdict_key": "AI_T2I_HIGH",
+    "title_en": "AI Generated (T2I)",
+    "title_tr": "AI Üretimi (T2I)",
+    "subtitle_en": "High confidence text-to-image generation",
+    "banner_en": "Strong diffusion fingerprint detected"
+  },
+  
+  "summary_axes": {
+    "ai_likelihood": {
+      "level": "high",
+      "probability": 0.78,
+      "confidence_interval": [0.65, 0.88]
+    },
+    "evidential_quality": {
+      "level": "medium",
+      "score": 62,
+      "reasons": ["moderate_model_disagreement"]
+    }
+  },
+  
+  "pathway": {
+    "pred": "t2i",
+    "confidence": "high",
+    "evidence": {
+      "diffusion_score": 0.82,
+      "i2i_evidence_score": 0.15,
+      "camera_evidence_score": 0.08
+    },
+    "generator_family": {
+      "pred": "diffusion_t2i_modern",
+      "confidence": "medium"
+    }
+  },
+  
+  "edit_assessment": {
+    "edit_type": "generator_artifacts",
+    "confidence": "medium",
+    "boundary_corroborated": false,
+    "global_adjustment_score": 0.25,
+    "local_manipulation_score": 0.18,
+    "generator_artifacts_score": 0.72
+  },
+  
+  "visualization": {
+    "mode": "global_edit",
+    "heatmap": {
+      "type": "global_intensity",
+      "overlay_base64": "...",
+      "hash_overlay_sha256": "..."
+    },
+    "legend": ["Blue/Green: Low intensity", "Yellow: Medium", "Red: High"],
+    "notes": ["Global processing intensity overlay (not proof of splice)"]
+  },
+  
+  "manipulation": {
+    "splice": {"score": 0.35, "regions": []},
+    "copy_move": {"score": 0.0, "regions": []},
+    "edge_matte": {"score": 0.12, "regions": []},
+    "blur_noise_mismatch": {"score": 0.28, "regions": []}
+  }
 }
 ```
 
-## 🐳 Docker ile Çalıştırma
+## 🔧 Configuration
+
+### Feature Flags (backend/forensic/config.py)
+```python
+ENABLE_JPEG_FORENSICS = True
+ENABLE_XMP_IPTC = True
+ENABLE_CALIBRATION = True
+ENABLE_NON_PHOTO_GATE = True
+ENABLE_CLIP_PROMPT_ENSEMBLE = True
+ENABLE_TWO_AXIS_OUTPUT = True
+ENABLE_VERDICT_TEXT = True
+ENABLE_MANIPULATION_MODULES = True
+ENABLE_PATHWAY_CLASSIFIER = True
+ENABLE_DIFFUSION_FINGERPRINT = True
+```
+
+### Key Thresholds
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `boundary_corroboration_threshold` | 0.60 | Min score for edge_matte/copy_move/inpainting to count as boundary evidence |
+| `i2i_evidence_threshold` | 0.60 | Min I2I evidence score to classify as Image-to-Image |
+| `diffusion_high_threshold` | 0.70 | High confidence diffusion detection |
+| `globality_threshold` | 0.30 | If >30% of image is suspicious, classify as global edit |
+
+## � Detection 2Accuracy
+
+| Content Type | Detection Rate | Notes |
+|--------------|----------------|-------|
+| T2I (Midjourney, DALL-E, SD) | 85-95% | High diffusion fingerprint |
+| Photoreal AI (Grok, Gemini) | 75-90% | CLIP photoreal hints |
+| Real Photos | 90-95% | Camera evidence + low diffusion |
+| I2I Transformations | 70-85% | Requires positive transform evidence |
+| Composites/Splices | 80-90% | Boundary corroboration required |
+
+## 🎯 Key Design Decisions
+
+### I2I Gating
+- I2I classification requires `i2i_evidence_score >= 0.60`
+- High diffusion score alone defaults to T2I, not I2I
+- Square aspect ratio is NOT I2I evidence (common Instagram crop)
+
+### Boundary Corroboration
+- `local_manipulation` requires boundary-type evidence
+- Only `edge_matte`, `copy_move`, or `inpainting_boundary` count
+- `noise_inconsistency` + `blur_mismatch` alone → `generator_artifacts` or `global_postprocess`
+
+### Visualization Modes
+- `global_edit`: Shows processing intensity (filters, color grading)
+- `local_manipulation`: Shows suspicious regions (only with boundary corroboration)
+- `none`: No significant edits detected
+
+## 🐳 Docker Deployment
 
 ```bash
-# Docker Compose ile (yakında)
+# Build and run
 docker-compose up -d
 
-# Manuel Docker
-docker build -t ai-detector-backend ./backend
-docker run -p 8001:8001 ai-detector-backend
+# Or manually
+docker build -t ai-detector ./backend
+docker run -p 8000:8000 ai-detector
 ```
 
-## 📈 Production Deployment
+## 🤝 Contributing
 
-### 🌐 Vercel/Netlify (Frontend)
-```bash
-# Frontend static files
-# Deploy to Vercel/Netlify
-```
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
 
-### ☁️ Railway/Heroku (Backend)
-```bash
-# Procfile oluştur
-echo "web: uvicorn main:app --host 0.0.0.0 --port \$PORT" > Procfile
-# Deploy
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-### 🔒 Güvenlik Ayarları
-```python
-# Production için
-CORS_ORIGINS = ["https://yourdomain.com"]
-API_RATE_LIMIT = "100/minute"
-MAX_FILE_SIZE = "5MB"
-```
+## ⚠️ Important Disclaimers
 
-## 🤝 Katkıda Bulunma
-
-1. **Fork** edin
-2. **Feature branch** oluşturun (`git checkout -b feature/amazing-feature`)
-3. **Commit** edin (`git commit -m 'Add amazing feature'`)
-4. **Push** edin (`git push origin feature/amazing-feature`)
-5. **Pull Request** açın
-
-### 🐛 Bug Raporu
-- Issue template kullanın
-- Görsel örnekleri ekleyin
-- Sistem bilgilerini paylaşın
-- Beklenen vs gerçek sonuçları belirtin
-
-### 💡 Özellik İsteği
-- Use case açıklayın
-- Teknik detayları verin
-- Mockup/wireframe ekleyin
-
-## 📊 Roadmap
-
-### 🎯 v2.0 (Q1 2025)
-- [ ] Video AI detection (Sora, Runway)
-- [ ] Batch processing API
-- [ ] Advanced C2PA integration
-- [ ] Custom model training interface
-
-### 🚀 v2.5 (Q2 2025)
-- [ ] Real-time webcam analysis
-- [ ] Browser extension
-- [ ] Mobile app (React Native)
-- [ ] Enterprise dashboard
-
-### 🌟 v3.0 (Q3 2025)
-- [ ] Blockchain verification
-- [ ] AI watermarking
-- [ ] Federated learning
-- [ ] Multi-language support
-
-## ⚠️ Önemli Uyarılar
-
-> **🚨 Bu uygulama bir olasılık tahmini yapar, kesin hüküm vermez!**
+> **This tool provides probabilistic analysis, not definitive proof.**
 > 
-> - Sonuçlar %100 doğru değildir
-> - Kritik kararlar için profesyonel doğrulama gereklidir
-> - False positive/negative sonuçlar mümkündür
-> - Sürekli gelişen AI teknolojileri nedeniyle güncellemeler gereklidir
+> - Results are NOT 100% accurate
+> - "Definitive" verdicts require cryptographic proof (C2PA) or AI software signatures
+> - False positives/negatives are possible
+> - Professional verification recommended for critical decisions
+> - AI detection technology evolves rapidly; regular updates required
 
-## 📄 Lisans
+## 📄 License
 
-Bu proje [WATAM Lisansı](LICENSE) altında lisanslanmıştır - WeAreTheArtMakers.com
+This project is licensed under the [WATAM License](LICENSE) - WeAreTheArtMakers.com
 
-## 🙏 Teşekkürler
+## 🙏 Acknowledgments
 
-- [HuggingFace](https://huggingface.co/) - Transformers kütüphanesi
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern web framework
-- [Lucide Icons](https://lucide.dev/) - Beautiful icons
+- [HuggingFace](https://huggingface.co/) - Transformers & CLIP models
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [OpenAI CLIP](https://openai.com/research/clip) - Vision-language model
+- [Lucide Icons](https://lucide.dev/) - Beautiful icon set
 - [PIL/Pillow](https://pillow.readthedocs.io/) - Image processing
-- [WeAreTheArtMakers.com](https://WeAreTheArtMakers.com) - Lisans sağlayıcısı
-
-## 📞 İletişim & Destek
-
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/ai-image-detector/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/ai-image-detector/discussions)
-- 📧 **Email**: your.email@example.com
-- 🐦 **Twitter**: [@yourusername](https://twitter.com/yourusername)
 
 ---
 
 <div align="center">
 
-**⭐ Bu projeyi beğendiyseniz yıldız vermeyi unutmayın!**
+**⭐ Star this repo if you find it useful!**
 
+<<<<<<< HEAD
 Made with ❤️ by [WATAM](https://github.com/wearetheartmakers)
+=======
+Built with ❤️ for the forensic analysis community
+>>>>>>> 2646f34 (feat: forensic pipeline + improved UI wording and setup scripts)
 
 </div>
