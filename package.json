@@ -1,0 +1,46 @@
+{
+  "name": "ai-image-detector",
+  "version": "1.0.0",
+  "description": "Advanced AI Image Detection with Computer Vision",
+  "main": "script.js",
+  "scripts": {
+    "start": "python3 -m http.server 3000",
+    "backend": "./run_backend_venv.sh",
+    "frontend": "./run_frontend.sh",
+    "setup": "./setup_venv.sh",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "lint": "eslint script.js",
+    "format": "prettier --write *.js *.css *.html",
+    "test": "echo \"Frontend tests would run here\""
+  },
+  "keywords": [
+    "ai",
+    "image-detection",
+    "computer-vision",
+    "machine-learning",
+    "deepfake-detection",
+    "fastapi",
+    "transformers",
+    "huggingface"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ai-image-detector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/ai-image-detector/issues"
+  },
+  "homepage": "https://github.com/yourusername/ai-image-detector#readme",
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "python": ">=3.8.0"
+  }
+}

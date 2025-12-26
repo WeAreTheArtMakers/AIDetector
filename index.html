@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Image Detector - Yapay Zeka Fotoğraf Algılayıcı</title>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+    <!-- Background Pattern -->
+    <div class="fixed inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.03"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-50"></div>
+    
+    <div class="relative z-10 container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <div class="flex items-center justify-center mb-4">
+                <i data-lucide="brain-circuit" class="w-12 h-12 text-blue-400 mr-3"></i>
+                <h1 class="text-4xl md:text-5xl font-bold">
+                    <span class="text-blue-400">AI Image</span>
+                    <span class="text-white"> Detector</span>
+                </h1>
+            </div>
+            <p class="text-slate-300 text-lg max-w-2xl mx-auto">
+                Fotoğrafınızın yapay zeka tarafından üretilip üretilmediğini gelişmiş algoritmalarla tespit edin
+            </p>
+        </header>
+
+        <!-- Main Card -->
+        <div class="max-w-4xl mx-auto">
+            <div class="glass-card backdrop-blur-xl bg-glass border border-glass-border rounded-2xl p-8 shadow-2xl">
+                
+                <!-- Upload Area -->
+                <div id="uploadArea" class="upload-area border-2 border-dashed border-slate-600 rounded-xl p-12 text-center transition-all duration-300 hover:border-blue-400 hover:bg-slate-800/30 cursor-pointer">
+                    <div id="uploadContent">
+                        <i data-lucide="upload-cloud" class="w-16 h-16 text-slate-400 mx-auto mb-4"></i>
+                        <h3 class="text-xl font-semibold mb-2">Fotoğrafınızı Yükleyin</h3>
+                        <p class="text-slate-400 mb-6">Dosyayı buraya sürükleyin veya tıklayarak seçin</p>
+                        <button id="selectFileBtn" class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors">
+                            <i data-lucide="folder-open" class="w-5 h-5 mr-2"></i>
+                            Dosya Seç
+                        </button>
+                        <p class="text-sm text-slate-500 mt-4">Desteklenen formatlar: JPG, PNG, WebP (Max: 10MB)</p>
+                    </div>
+                    
+                    <!-- Image Preview -->
+                    <div id="imagePreview" class="hidden">
+                        <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-lg mb-4" alt="Önizleme">
+                        <div class="flex items-center justify-center space-x-4">
+                            <span id="fileName" class="text-slate-300"></span>
+                            <button id="removeImage" class="text-red-400 hover:text-red-300 transition-colors">
+                                <i data-lucide="x-circle" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Section -->
+                <div id="analysisSection" class="hidden mt-8">
+                    <!-- Analyze Button -->
+                    <div class="text-center mb-8">
+                        <button id="analyzeBtn" class="inline-flex items-center px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 rounded-xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg">
+                            <i data-lucide="search" class="w-6 h-6 mr-3"></i>
+                            Analiz Et
+                        </button>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div id="progressSection" class="hidden mb-8">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium">Analiz Ediliyor...</span>
+                            <span id="progressText" class="text-sm text-slate-400">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-3">
+                            <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Results -->
+                    <div id="resultsSection" class="hidden">
+                        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                            <h3 class="text-xl font-semibold mb-4 flex items-center">
+                                <i data-lucide="bar-chart-3" class="w-6 h-6 mr-2 text-blue-400"></i>
+                                Analiz Sonuçları
+                            </h3>
+                            
+                            <div id="resultContent" class="space-y-4">
+                                <!-- Results will be populated by JavaScript -->
+                            </div>
+                            
+                            <div class="mt-6 pt-4 border-t border-slate-700">
+                                <button id="analyzeAgain" class="inline-flex items-center px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
+                                    <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                                    Yeni Analiz
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden File Input -->
+                <input type="file" id="fileInput" accept="image/*" class="hidden">
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center mt-12 text-slate-400">
+            <p>&copy; 2025 AI Image Detector. Açık kaynak projesi.</p>
+        </footer>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
