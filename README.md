@@ -258,6 +258,6 @@ Bu proje [WATAM Lisansı](LICENSE) altında lisanslanmıştır - WeAreTheArtMake
 
 **⭐ Bu projeyi beğendiyseniz yıldız vermeyi unutmayın!**
 
-Made with ❤️ by [Your Name](https://github.com/yourusername)
+Made with ❤️ by [WATAM](https://github.com/wearetheartmakers)
 
 </div>
