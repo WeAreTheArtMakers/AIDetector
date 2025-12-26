@@ -397,102 +397,99 @@ async def analyze_ai_signatures_ultra(image: Image.Image, original_size: tuple) 
     logger.info(f"🔍 ULTRA ANALYSIS: Score={ai_score:.3f}, Factors={suspicious_factors}, Critical={critical_flags}")
     
     return min(ai_score, 1.0)
+                ai_probability = max(ai_probability, score * 0.9)
+            elif any(term in label for term in ['perfect', 'flawless', 'ideal', 'pristine']):
+                ai_probability = max(ai_probability, score * 0.7)
+            elif score > 0.98:  # Suspiciously high confidence
+                ai_probability = max(ai_probability, 0.8)
+            
+            model_confidence = max(model_confidence, score)
+        
+        return {
+            "ai_probability": min(max(ai_probability, 0.0), 1.0),
+            "confidence": min(max(model_confidence, 0.0), 1.0),
+            "model_used": MODEL_CONFIG["model_name"],
+            "analysis_successful": True,
+            "top_predictions": results[:3] if results else [],
+            "detection_details": await get_detection_details(image, ai_probability)
+        }
+        
+    except Exception as e:
+        logger.error(f"AI model analysis failed: {e}")
+        return {
+            "ai_probability": 0.5,
+            "confidence": 0.3,
+            "model_used": "fallback",
+            "analysis_successful": False,
+            "error": str(e)
+        }
 
-async def analyze_ai_signatures_ultra(image: Image.Image, original_size: tuple) -> float:
-    """ULTRA-AGGRESSIVE AI signature detection with enhanced algorithms"""
+async def analyze_ai_signatures(image: Image.Image, original_size: tuple) -> float:
+    """Advanced AI signature detection"""
     import numpy as np
     
     # Convert to numpy array for analysis
     img_array = np.array(image)
     height, width = img_array.shape[:2]
     
-    ai_score = 0.2  # Lower base score, but more aggressive detection
+    ai_score = 0.3  # Base score
     suspicious_factors = 0
-    critical_flags = 0  # New: Critical AI indicators
     
-    logger.info(f"🔍 ULTRA ANALYSIS START: {original_size} -> {image.size}")
-    
-    # 1. ENHANCED Dimension Analysis - More AI sizes
-    ultra_common_ai_dimensions = [
-        # Standard AI sizes
+    # 1. Dimension Analysis - AI loves specific sizes
+    common_ai_dimensions = [
         (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
-        # Midjourney favorites
-        (512, 768), (768, 512), (1024, 768), (768, 1024), (1152, 896), (896, 1152),
-        # DALL-E sizes
-        (1024, 1024), (1792, 1024), (1024, 1792),
-        # Stable Diffusion XL
-        (1216, 832), (832, 1216), (1344, 768), (768, 1344),
-        # New 2024 sizes
-        (1280, 720), (720, 1280), (1920, 1080), (1080, 1920),
-        (2304, 1536), (1536, 2304), (2560, 1440), (1440, 2560)
+        (512, 768), (768, 512), (1024, 768), (768, 1024),
+        (1920, 1080), (1080, 1920)  # Common AI ratios
     ]
     
-    if original_size in ultra_common_ai_dimensions:
-        ai_score += 0.4  # Increased from 0.3
-        critical_flags += 1
+    if original_size in common_ai_dimensions:
+        ai_score += 0.3
         suspicious_factors += 1
-        logger.info(f"🚨 CRITICAL: Exact AI dimension {original_size}")
+        logger.info(f"🚨 AI SIGNATURE: Exact AI dimension {original_size}")
     
-    # 2. ULTRA-PRECISE aspect ratios
+    # 2. Perfect aspect ratios
     aspect_ratio = original_size[0] / original_size[1]
-    ultra_precise_ratios = [
-        1.0, 1.33333, 1.5, 1.77778, 0.75, 0.66667, 0.5625,  # Standard
-        1.25, 1.6, 0.8, 1.28571, 0.77778, 1.41667, 0.70588,  # AI favorites
-        2.0, 0.5, 1.2, 0.83333, 1.77777, 0.5625  # Extreme ratios
-    ]
+    perfect_ratios = [1.0, 1.33, 1.5, 1.77, 0.75, 0.67, 0.56]  # Common AI ratios
     
-    for ratio in ultra_precise_ratios:
-        if abs(aspect_ratio - ratio) < 0.01:  # More precise matching
-            ai_score += 0.25
+    for ratio in perfect_ratios:
+        if abs(aspect_ratio - ratio) < 0.02:
+            ai_score += 0.2
             suspicious_factors += 1
-            logger.info(f"🚨 ULTRA-PRECISE RATIO: {aspect_ratio:.5f} ≈ {ratio}")
+            logger.info(f"🚨 AI SIGNATURE: Perfect aspect ratio {aspect_ratio:.2f}")
             break
     
-    # 3. ENHANCED Color Analysis
-    color_score = analyze_color_signatures_ultra(img_array)
+    # 3. Color Analysis - AI has distinctive color patterns
+    color_score = analyze_color_signatures(img_array)
     ai_score += color_score
-    if color_score > 0.3:
-        critical_flags += 1
+    if color_score > 0.2:
         suspicious_factors += 1
     
-    # 4. ULTRA-SENSITIVE Noise Analysis
-    noise_score = analyze_noise_signatures_ultra(img_array)
+    # 4. Noise Analysis - AI images are too clean
+    noise_score = analyze_noise_signatures(img_array)
     ai_score += noise_score
-    if noise_score > 0.35:
-        critical_flags += 1
+    if noise_score > 0.25:
         suspicious_factors += 1
     
-    # 5. AGGRESSIVE Edge Analysis
-    edge_score = analyze_edge_signatures_ultra(img_array)
+    # 5. Edge Analysis - AI creates unnatural edges
+    edge_score = analyze_edge_signatures(img_array)
     ai_score += edge_score
-    if edge_score > 0.3:
-        critical_flags += 1
+    if edge_score > 0.2:
         suspicious_factors += 1
     
-    # 6. ENHANCED Frequency Analysis
-    freq_score = analyze_frequency_signatures_ultra(img_array)
+    # 6. Frequency Analysis - AI has specific frequency patterns
+    freq_score = analyze_frequency_signatures(img_array)
     ai_score += freq_score
-    if freq_score > 0.25:
+    if freq_score > 0.2:
         suspicious_factors += 1
     
-    # ULTRA-AGGRESSIVE Multipliers
-    if critical_flags >= 2:
-        ai_score *= 1.8  # Massive boost for multiple critical flags
-        logger.info(f"🚨🚨 MULTIPLE CRITICAL FLAGS: {critical_flags} - MAJOR AI SIGNATURE")
-    elif critical_flags >= 1:
-        ai_score *= 1.5  # Strong boost for critical flags
-        logger.info(f"🚨 CRITICAL FLAG DETECTED: {critical_flags}")
-    
-    if suspicious_factors >= 4:
-        ai_score *= 1.6  # High confidence with many factors
-        logger.info(f"🚨 HIGH SUSPICION: {suspicious_factors} factors")
-    elif suspicious_factors >= 3:
+    # Bonus for multiple suspicious factors
+    if suspicious_factors >= 3:
         ai_score *= 1.4
-        logger.info(f"🚨 MODERATE SUSPICION: {suspicious_factors} factors")
+        logger.info(f"🚨 MULTIPLE AI SIGNATURES: {suspicious_factors} factors detected")
     elif suspicious_factors >= 2:
         ai_score *= 1.2
     
-    logger.info(f"🔍 ULTRA ANALYSIS: Score={ai_score:.3f}, Factors={suspicious_factors}, Critical={critical_flags}")
+    logger.info(f"🔍 AI ANALYSIS: Score={ai_score:.2f}, Factors={suspicious_factors}")
     
     return min(ai_score, 1.0)
 
