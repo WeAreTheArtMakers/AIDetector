@@ -4,14 +4,13 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.35+-orange.svg)](https://huggingface.co/transformers/)
+[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/wearetheartmakers/ai-image-detector)
 
-A production-grade **forensic image analysis platform** for detecting AI-generated images. Features multi-model ensemble detection, CLIP semantic analysis, manipulation detection with heatmap visualization, and comprehensive metadata forensics.
+A production-grade **forensic image analysis platform** for detecting AI-generated images. Features multi-model ensemble detection, CLIP semantic analysis, manipulation detection with heatmap visualization, OCR-based text forensics, generator fingerprinting, and comprehensive metadata forensics.
 
-=======
 ![AI Image Detector](ai-detect.PNG)
 
 ## ✨ Key Features
->>>>>>> 2646f34 (feat: forensic pipeline + improved UI wording and setup scripts)
 
 ### 🧠 Multi-Model Ensemble AI Detection
 - **Ensemble Analysis**: Multiple AI detection models with uncertainty quantification
@@ -19,16 +18,34 @@ A production-grade **forensic image analysis platform** for detecting AI-generat
 - **Calibrated Probabilities**: Confidence intervals and model agreement metrics
 - **Two-Axis Output**: AI likelihood + evidential quality scoring
 
-### � Advkanced Forensic Analysis
+### 🔬 Advanced Forensic Analysis
 - **Diffusion Fingerprint Detection**: Identifies diffusion model artifacts in frequency domain
 - **Generation Pathway Classification**: T2I vs I2I vs Real Photo with evidence-based gating
+- **Enhanced I2I Detection**: Perfect square detection, noise uniformity variation, model disagreement analysis
 - **JPEG Forensics**: Double compression detection, quantization fingerprinting
 - **Manipulation Detection**: Copy-move, splice, edge matte, blur/noise mismatch
+- **Evidence Fusion**: Weighted combination of multiple forensic signals
+
+### 📝 Text Forensics (OCR)
+- **OCR Detection**: EasyOCR-based text extraction with optimized parameters
+- **Multi-language OCR**: 7 languages supported (EN, TR, ES, DE, FR, IT, PT)
+- **Image Preprocessing**: Auto contrast/sharpness enhancement, upscaling for small images
+- **Gibberish Detection**: Identifies nonsensical AI-generated text on signs/labels
+- **AI Text Artifacts**: Detects malformed characters, unusual casing, invalid words
+- **Gibberish Boost**: High gibberish ratio increases AI probability (+5% to +15%)
+
+### 🔍 Generator Fingerprinting
+- **AI Tool Identification**: Statistical analysis to identify likely generator
+- **Supported Generators**: Midjourney V5/V6, DALL-E 3, Stable Diffusion XL, Flux, Grok/Aurora, Firefly, Ideogram, Gemini Imagen, ChatGPT/DALL-E
+- **Dimension Matching**: Known AI output dimensions (1024x1024, 784x1168, etc.) boost detection
+- **Spectrum/Noise/Color Analysis**: Frequency rolloff, noise uniformity, color signatures
+- **Confidence Scoring**: Match confidence with feature breakdown
 
 ### 🎨 Forensic Visualization
 - **Heatmap Overlays**: Visual representation of detected anomalies
 - **Global Edit Mode**: Shows processing intensity for filters/color grading
 - **Local Manipulation Mode**: Highlights boundary-corroborated suspicious regions
+- **T2I Artifacts Mode**: Visualizes AI generation artifacts (diffusion signatures)
 - **Deterministic Generation**: SHA256 hashes for integrity verification
 
 ### 📊 Edit Assessment System
@@ -37,9 +54,20 @@ A production-grade **forensic image analysis platform** for detecting AI-generat
 - **False Positive Prevention**: Noise inconsistency alone does NOT trigger composite labels
 - **AI Generation Artifacts**: Distinguishes AI texture artifacts from true manipulation
 
-### � ️ Metadata & Provenance
-- **EXIF/XMP/IPTC Extraction**: Comprehensive metadata analysis
+### 💭 Prompt Analysis
+- **Prompt Recovery**: Extracts exact prompts from AI tool metadata (Midjourney, DALL-E, etc.)
+- **Prompt Reconstruction**: Infers plausible prompts from visual content analysis
+- **BLIP Captioning**: AI-powered image description for prompt inference
+- **Clear Distinction**: "RECOVERED" (exact) vs "RECONSTRUCTED" (hypothesis)
+
+### 🗺️ GPS & Provenance
 - **GPS Verification**: Location data with confidence scoring
+- **Provenance Scoring**: EXIF/GPS evidence weighting for authenticity
+- **Platform Detection**: Instagram, WhatsApp re-encoding detection
+- **Old Timestamp Bonus**: Pre-2020 images get authenticity boost
+
+### 🛠️ Metadata & Camera Evidence
+- **EXIF/XMP/IPTC Extraction**: Comprehensive metadata analysis
 - **Camera Evidence**: CFA artifacts, PRNU proxy, camera settings
 - **AI Software Detection**: 20+ AI tool signatures (Midjourney, DALL-E, Stable Diffusion, etc.)
 
@@ -53,25 +81,32 @@ A production-grade **forensic image analysis platform** for detecting AI-generat
 ```
 ai-image-detector/
 ├── backend/
-│   ├── main.py                    # FastAPI application
+│   ├── main.py                      # FastAPI application
 │   ├── forensic/
-│   │   ├── ai_detector.py         # Multi-model ensemble
-│   │   ├── content_type.py        # CLIP-based content classification
+│   │   ├── ai_detector.py           # Multi-model ensemble
+│   │   ├── content_type.py          # CLIP-based content classification
 │   │   ├── diffusion_fingerprint.py # Diffusion model detection
-│   │   ├── pathway_classifier.py  # T2I/I2I/Real classification
-│   │   ├── manipulation.py        # Manipulation detection
-│   │   ├── edit_assessment.py     # Edit type taxonomy
-│   │   ├── visualization.py       # Heatmap generation
-│   │   ├── verdict_generator.py   # Evidence-based verdicts
-│   │   ├── metadata.py            # EXIF/XMP/IPTC extraction
-│   │   ├── jpeg_forensics.py      # JPEG analysis
-│   │   ├── statistics.py          # Calibration & uncertainty
-│   │   └── config.py              # Feature flags
+│   │   ├── pathway_classifier.py    # T2I/I2I/Real classification
+│   │   ├── manipulation.py          # Manipulation detection
+│   │   ├── edit_assessment.py       # Edit type taxonomy
+│   │   ├── visualization.py         # Heatmap generation
+│   │   ├── verdict_generator.py     # Evidence-based verdicts
+│   │   ├── text_forensics.py        # OCR + AI text artifact detection
+│   │   ├── generator_fingerprint.py # AI tool identification
+│   │   ├── prompt_analysis.py       # Unified prompt recovery/reconstruction
+│   │   ├── prompt_recovery.py       # Metadata-based prompt extraction
+│   │   ├── content_extraction.py    # BLIP captioning
+│   │   ├── provenance_score.py      # EXIF/GPS evidence scoring
+│   │   ├── evidence_fusion.py       # Weighted evidence combination
+│   │   ├── metadata.py              # EXIF/XMP/IPTC extraction
+│   │   ├── jpeg_forensics.py        # JPEG analysis
+│   │   ├── statistics.py            # Calibration & uncertainty
+│   │   └── config.py                # Feature flags
 │   └── requirements.txt
-├── index.html                     # Frontend UI
-├── script.js                      # Analysis display logic
-├── style.css                      # Modern dark theme
-├── language-manager.js            # i18n support
+├── index.html                       # Frontend UI
+├── script.js                        # Analysis display logic
+├── style.css                        # Modern dark theme
+├── language-manager.js              # i18n support
 └── docker-compose.yml
 ```
 
@@ -86,7 +121,7 @@ ai-image-detector/
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/ai-image-detector.git
+git clone https://github.com/wearetheartmakers/ai-image-detector.git
 cd ai-image-detector
 
 # Setup virtual environment
@@ -117,7 +152,7 @@ curl -X POST "http://localhost:8000/analyze?file_chain=original" \
   -F "file=@image.jpg"
 ```
 
-**Response Schema:**
+**Key Response Fields:**
 ```json
 {
   "success": true,
@@ -129,22 +164,7 @@ curl -X POST "http://localhost:8000/analyze?file_chain=original" \
   "verdict_text": {
     "verdict_key": "AI_T2I_HIGH",
     "title_en": "AI Generated (T2I)",
-    "title_tr": "AI Üretimi (T2I)",
-    "subtitle_en": "High confidence text-to-image generation",
-    "banner_en": "Strong diffusion fingerprint detected"
-  },
-  
-  "summary_axes": {
-    "ai_likelihood": {
-      "level": "high",
-      "probability": 0.78,
-      "confidence_interval": [0.65, 0.88]
-    },
-    "evidential_quality": {
-      "level": "medium",
-      "score": 62,
-      "reasons": ["moderate_model_disagreement"]
-    }
+    "subtitle_en": "High confidence text-to-image generation"
   },
   
   "pathway": {
@@ -152,40 +172,33 @@ curl -X POST "http://localhost:8000/analyze?file_chain=original" \
     "confidence": "high",
     "evidence": {
       "diffusion_score": 0.82,
-      "i2i_evidence_score": 0.15,
       "camera_evidence_score": 0.08
-    },
-    "generator_family": {
-      "pred": "diffusion_t2i_modern",
-      "confidence": "medium"
     }
   },
   
-  "edit_assessment": {
-    "edit_type": "generator_artifacts",
-    "confidence": "medium",
-    "boundary_corroborated": false,
-    "global_adjustment_score": 0.25,
-    "local_manipulation_score": 0.18,
-    "generator_artifacts_score": 0.72
+  "text_forensics": {
+    "has_text": true,
+    "text_count": 5,
+    "ai_text_score": 0.72,
+    "verdict": "likely_ai",
+    "ai_text_evidence": ["'KOEMO': Gibberish/nonsensical text"]
   },
   
-  "visualization": {
-    "mode": "global_edit",
-    "heatmap": {
-      "type": "global_intensity",
-      "overlay_base64": "...",
-      "hash_overlay_sha256": "..."
-    },
-    "legend": ["Blue/Green: Low intensity", "Yellow: Medium", "Red: High"],
-    "notes": ["Global processing intensity overlay (not proof of splice)"]
+  "generator_fingerprint": {
+    "top_match": {
+      "name": "Grok Aurora",
+      "family": "grok",
+      "confidence": 0.65
+    }
   },
   
-  "manipulation": {
-    "splice": {"score": 0.35, "regions": []},
-    "copy_move": {"score": 0.0, "regions": []},
-    "edge_matte": {"score": 0.12, "regions": []},
-    "blur_noise_mismatch": {"score": 0.28, "regions": []}
+  "prompt_analysis": {
+    "source": "RECONSTRUCTED_MEDIUM",
+    "has_reconstructed": true,
+    "reconstructed": {
+      "short_en": "European street scene, parked cars, sunny day",
+      "confidence": "medium"
+    }
   }
 }
 ```
@@ -194,52 +207,54 @@ curl -X POST "http://localhost:8000/analyze?file_chain=original" \
 
 ### Feature Flags (backend/forensic/config.py)
 ```python
+# Core Features
+ENABLE_AI_DETECTION = True
 ENABLE_JPEG_FORENSICS = True
-ENABLE_XMP_IPTC = True
-ENABLE_CALIBRATION = True
-ENABLE_NON_PHOTO_GATE = True
-ENABLE_CLIP_PROMPT_ENSEMBLE = True
-ENABLE_TWO_AXIS_OUTPUT = True
-ENABLE_VERDICT_TEXT = True
 ENABLE_MANIPULATION_MODULES = True
+
+# Advanced Features
 ENABLE_PATHWAY_CLASSIFIER = True
 ENABLE_DIFFUSION_FINGERPRINT = True
+ENABLE_TEXT_FORENSICS = True          # OCR + AI text artifacts
+ENABLE_GENERATOR_FINGERPRINT = True   # AI tool identification
+ENABLE_PROMPT_RECOVERY = True         # Metadata prompt extraction
+ENABLE_BLIP_CAPTIONING = True         # Visual prompt inference
+
+# Output Features
+ENABLE_TWO_AXIS_OUTPUT = True
+ENABLE_VERDICT_TEXT = True
+ENABLE_GENERATIVE_HEATMAP = True
 ```
 
 ### Key Thresholds
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `boundary_corroboration_threshold` | 0.60 | Min score for edge_matte/copy_move/inpainting to count as boundary evidence |
-| `i2i_evidence_threshold` | 0.60 | Min I2I evidence score to classify as Image-to-Image |
 | `diffusion_high_threshold` | 0.70 | High confidence diffusion detection |
-| `globality_threshold` | 0.30 | If >30% of image is suspicious, classify as global edit |
+| `camera_evidence_threshold` | 0.35 | Min camera evidence for "Photo" verdict |
+| `boundary_corroboration_threshold` | 0.60 | Min score for local manipulation |
+| `pAI_threshold` | 0.40 | Min AI probability for "Likely AI" verdict |
+| `gibberish_ratio_threshold` | 0.50 | High gibberish = likely AI text |
+| `generator_match_threshold` | 0.50 | Medium confidence generator match |
 
-## � Detection 2Accuracy
+## 📊 Detection Accuracy
 
 | Content Type | Detection Rate | Notes |
 |--------------|----------------|-------|
 | T2I (Midjourney, DALL-E, SD) | 85-95% | High diffusion fingerprint |
 | Photoreal AI (Grok, Gemini) | 75-90% | CLIP photoreal hints |
 | Real Photos | 90-95% | Camera evidence + low diffusion |
-| I2I Transformations | 70-85% | Requires positive transform evidence |
+| AI Text Artifacts | 70-85% | Gibberish on signs/labels |
 | Composites/Splices | 80-90% | Boundary corroboration required |
 
-## 🎯 Key Design Decisions
+## ⚠️ Important Disclaimers
 
-### I2I Gating
-- I2I classification requires `i2i_evidence_score >= 0.60`
-- High diffusion score alone defaults to T2I, not I2I
-- Square aspect ratio is NOT I2I evidence (common Instagram crop)
-
-### Boundary Corroboration
-- `local_manipulation` requires boundary-type evidence
-- Only `edge_matte`, `copy_move`, or `inpainting_boundary` count
-- `noise_inconsistency` + `blur_mismatch` alone → `generator_artifacts` or `global_postprocess`
-
-### Visualization Modes
-- `global_edit`: Shows processing intensity (filters, color grading)
-- `local_manipulation`: Shows suspicious regions (only with boundary corroboration)
-- `none`: No significant edits detected
+> **This tool provides probabilistic analysis, not definitive proof.**
+> 
+> - Results are NOT 100% accurate
+> - "Definitive" verdicts require cryptographic proof (C2PA) or AI software signatures
+> - False positives/negatives are possible
+> - Professional verification recommended for critical decisions
+> - AI detection technology evolves rapidly; regular updates required
 
 ## 🐳 Docker Deployment
 
@@ -262,16 +277,6 @@ docker run -p 8000:8000 ai-detector
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-## ⚠️ Important Disclaimers
-
-> **This tool provides probabilistic analysis, not definitive proof.**
-> 
-> - Results are NOT 100% accurate
-> - "Definitive" verdicts require cryptographic proof (C2PA) or AI software signatures
-> - False positives/negatives are possible
-> - Professional verification recommended for critical decisions
-> - AI detection technology evolves rapidly; regular updates required
-
 ## 📄 License
 
 This project is licensed under the [WATAM License](LICENSE) - WeAreTheArtMakers.com
@@ -281,8 +286,8 @@ This project is licensed under the [WATAM License](LICENSE) - WeAreTheArtMakers.
 - [HuggingFace](https://huggingface.co/) - Transformers & CLIP models
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
 - [OpenAI CLIP](https://openai.com/research/clip) - Vision-language model
+- [EasyOCR](https://github.com/JaidedAI/EasyOCR) - OCR engine
 - [Lucide Icons](https://lucide.dev/) - Beautiful icon set
-- [PIL/Pillow](https://pillow.readthedocs.io/) - Image processing
 
 ---
 
@@ -290,10 +295,6 @@ This project is licensed under the [WATAM License](LICENSE) - WeAreTheArtMakers.
 
 **⭐ Star this repo if you find it useful!**
 
-<<<<<<< HEAD
 Made with ❤️ by [WATAM](https://github.com/wearetheartmakers)
-=======
-Built with ❤️ for the forensic analysis community
->>>>>>> 2646f34 (feat: forensic pipeline + improved UI wording and setup scripts)
 
 </div>

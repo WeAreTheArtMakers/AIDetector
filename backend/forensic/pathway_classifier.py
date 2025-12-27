@@ -84,7 +84,8 @@ class PathwayClassifier:
                  edit_assessment: Dict[str, Any],
                  metadata: Dict[str, Any],
                  domain: Dict[str, Any],
-                 model_scores: List[Dict] = None) -> Dict[str, Any]:
+                 model_scores: List[Dict] = None,
+                 provenance_result: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Main classification entry point.
         
@@ -108,7 +109,9 @@ class PathwayClassifier:
                 "diffusion_score": 0.0,
                 "i2i_evidence_score": 0.0,
                 "camera_evidence_score": 0.0,
-                "transformation_evidence": []
+                "transformation_evidence": [],
+                "provenance_override": False,
+                "platform_detected": None
             },
             "generator_family": {
                 "pred": GeneratorFamily.UNKNOWN,
@@ -122,6 +125,19 @@ class PathwayClassifier:
             diffusion_score = diffusion_result.get("diffusion_score", 0.0)
             result["evidence"]["diffusion_score"] = diffusion_score
             
+            # === NEW: Check for platform re-encoding and old timestamps ===
+            provenance_result = provenance_result or {}
+            is_platform_reencoded = provenance_result.get("is_platform_reencoded", False)
+            platform_software = provenance_result.get("flags", {}).get("platform_software")
+            
+            # Check for old timestamp (pre-2020, before AI became widespread)
+            timestamps = metadata.get("timestamps", {})
+            gps = metadata.get("gps", {})
+            has_old_timestamp = self._check_old_timestamp(timestamps, gps)
+            
+            result["evidence"]["platform_detected"] = platform_software
+            result["evidence"]["has_old_timestamp"] = has_old_timestamp
+            
             # 1. Compute I2I evidence score (transformation evidence)
             i2i_evidence = self._compute_i2i_evidence(
                 image, manipulation_result, edit_assessment, 
@@ -134,7 +150,22 @@ class PathwayClassifier:
             camera_evidence = self._compute_camera_evidence(
                 image, metadata, diffusion_result
             )
-            result["evidence"]["camera_evidence_score"] = camera_evidence["score"]
+            
+            # === NEW: Boost camera evidence if platform + old timestamp ===
+            camera_score = camera_evidence["score"]
+            if is_platform_reencoded and has_old_timestamp:
+                # Strong indicator of real photo - boost camera score
+                camera_boost = 0.25
+                camera_score = min(1.0, camera_score + camera_boost)
+                result["evidence"]["notes"].append(f"Camera score boosted (platform + old timestamp): +{camera_boost:.2f}")
+                result["evidence"]["provenance_override"] = True
+            elif is_platform_reencoded:
+                # Platform alone gives smaller boost
+                camera_boost = 0.10
+                camera_score = min(1.0, camera_score + camera_boost)
+                result["evidence"]["notes"].append(f"Camera score boosted (platform re-encoding): +{camera_boost:.2f}")
+            
+            result["evidence"]["camera_evidence_score"] = camera_score
             
             # 3. Check for non-photo content (CGI/3D)
             non_photo_score = content_type.get("non_photo_score", 0.5)
@@ -150,16 +181,21 @@ class PathwayClassifier:
             probs = self._compute_pathway_probs(
                 diffusion_score=diffusion_score,
                 i2i_evidence_score=i2i_evidence["score"],
-                camera_evidence_score=camera_evidence["score"],
+                camera_evidence_score=camera_score,
                 non_photo_score=non_photo_score,
                 inpainting_score=inpainting_score,
                 is_non_photo=is_non_photo,
-                metadata=metadata
+                metadata=metadata,
+                is_platform_reencoded=is_platform_reencoded,
+                has_old_timestamp=has_old_timestamp
             )
             result["probs"] = probs
             
             # 6. Determine final prediction
-            pred, confidence = self._determine_prediction(probs, result["evidence"])
+            pred, confidence = self._determine_prediction(
+                probs, result["evidence"], 
+                is_platform_reencoded, has_old_timestamp
+            )
             result["pred"] = pred
             result["confidence"] = confidence
             
@@ -173,19 +209,54 @@ class PathwayClassifier:
             # 8. Build signal explanations
             result["evidence"]["signals"] = self._build_signals(
                 diffusion_score, i2i_evidence, camera_evidence,
-                inpainting_score, is_non_photo, pred
+                inpainting_score, is_non_photo, pred,
+                is_platform_reencoded, has_old_timestamp
             )
             
             logger.info(f"Pathway: {pred} ({confidence}), "
                        f"diffusion={diffusion_score:.2f}, "
                        f"i2i_evidence={i2i_evidence['score']:.2f}, "
-                       f"camera={camera_evidence['score']:.2f}")
+                       f"camera={camera_score:.2f}, "
+                       f"platform={platform_software}, old_ts={has_old_timestamp}")
             
         except Exception as e:
             logger.error(f"Pathway classification error: {e}")
             result["evidence"]["notes"].append(f"Error: {str(e)}")
         
         return result
+    
+    def _check_old_timestamp(self, timestamps: Dict, gps: Dict) -> bool:
+        """
+        Check if image has timestamp from before AI became widespread (pre-2020).
+        
+        Returns True if timestamp is from 2019 or earlier.
+        """
+        from datetime import datetime
+        
+        # Check DateTimeOriginal
+        dt_original = timestamps.get("original", "")
+        if dt_original:
+            try:
+                # Parse EXIF format: "YYYY:MM:DD HH:MM:SS"
+                year = int(dt_original[:4])
+                if year <= 2019:
+                    return True
+            except:
+                pass
+        
+        # Check GPS timestamp
+        gps_timestamp = gps.get("timestamp_utc", "")
+        if gps_timestamp:
+            try:
+                # Parse ISO format
+                if "T" in gps_timestamp:
+                    year = int(gps_timestamp[:4])
+                    if year <= 2019:
+                        return True
+            except:
+                pass
+        
+        return False
     
     def _compute_i2i_evidence(self, image: Image.Image,
                               manipulation_result: Dict,
@@ -201,11 +272,46 @@ class PathwayClassifier:
         - Structure-preserving transformation patterns
         - Inpainting boundaries
         - Software hints (Photoshop + local manipulation)
+        - Perfect square + portrait content (common I2I pattern)
+        - High noise uniformity variation (source image influence)
         """
         evidence = []
         score = 0.0
         
-        # 1. Check for stylization edge enhancement along contours
+        # Get image dimensions
+        width, height = image.size
+        is_perfect_square = (width == height)
+        
+        # 1. Check for perfect square + portrait content (strong I2I indicator)
+        # Many I2I tools output square images from portrait photos
+        if is_perfect_square:
+            # Check if content looks like a portrait
+            photo_score = content_type.get("photo_score", 0)
+            non_photo_score = content_type.get("non_photo_score", 0)
+            
+            # Check for portrait-like content (face/person)
+            top_matches = content_type.get("top_matches", {})
+            photo_matches = top_matches.get("photo", [])
+            
+            is_portrait_content = False
+            for match in photo_matches:
+                if isinstance(match, dict):
+                    label = match.get("label", "").lower()
+                else:
+                    label = str(match).lower()
+                if any(kw in label for kw in ["portrait", "face", "person", "headshot", "selfie"]):
+                    is_portrait_content = True
+                    break
+            
+            if is_portrait_content:
+                evidence.append("Perfect square + portrait content (common I2I pattern)")
+                score += 0.35
+            elif is_perfect_square and width in [800, 1024, 1536]:
+                # Common I2I output sizes
+                evidence.append(f"Perfect square AI dimension ({width}x{height})")
+                score += 0.15
+        
+        # 2. Check for stylization edge enhancement along contours
         # (I2I often enhances edges while preserving structure)
         if manipulation_result:
             edge_matte_score = manipulation_result.get("edge_matte", {}).get("score", 0)
@@ -216,7 +322,7 @@ class PathwayClassifier:
                     evidence.append("Edge enhancement along contours (possible I2I)")
                     score += 0.25
         
-        # 2. Check for structure-preserving transformation
+        # 3. Check for structure-preserving transformation
         # (Photo noise in background + stylized foreground)
         if edit_assessment:
             edit_type = edit_assessment.get("edit_type", "none_detected")
@@ -226,9 +332,9 @@ class PathwayClassifier:
                     evidence.append("Localized transformation detected")
                     score += 0.30
         
-        # 3. Check for software hints suggesting I2I workflow
+        # 4. Check for software hints suggesting I2I workflow
         software = metadata.get("software", {})
-        software_name = software.get("name", "").lower()
+        software_name = software.get("name", "").lower() if isinstance(software, dict) else ""
         
         i2i_software = ["photoshop", "lightroom", "capture one", "affinity", 
                        "gimp", "pixelmator", "luminar"]
@@ -236,7 +342,7 @@ class PathwayClassifier:
             evidence.append(f"Editing software detected: {software_name}")
             score += 0.20
         
-        # 4. Check for mixed photo/AI characteristics
+        # 5. Check for mixed photo/AI characteristics
         # (High diffusion score but also camera-like features)
         diffusion_score = diffusion_result.get("diffusion_score", 0)
         cfa_score = diffusion_result.get("channel_features", {}).get("cfa_artifact_score", 0)
@@ -245,11 +351,27 @@ class PathwayClassifier:
             evidence.append("Mixed AI/camera characteristics (possible I2I from photo)")
             score += 0.25
         
-        # 5. Check content type for composite hints
+        # 6. Check content type for composite hints
         composite_score = content_type.get("composite_score", 0)
         if composite_score > 0.5:
             evidence.append("Composite/edited content detected")
             score += 0.15
+        
+        # 7. Check for noise uniformity variation (I2I preserves source noise patterns)
+        noise_features = diffusion_result.get("noise_features", {})
+        noise_uniformity = noise_features.get("uniformity", 0.8)
+        
+        # I2I typically has less uniform noise (source image influence)
+        if 0.60 <= noise_uniformity <= 0.80:
+            evidence.append("Noise pattern suggests source image influence")
+            score += 0.15
+        
+        # 8. Check for high model disagreement (common in I2I)
+        # I2I images often confuse AI detectors
+        model_disagreement = diffusion_result.get("model_disagreement", 0)
+        if model_disagreement > 0.40:
+            evidence.append("High model disagreement (possible I2I)")
+            score += 0.10
         
         # Cap score
         score = min(1.0, score)
@@ -351,13 +473,20 @@ class PathwayClassifier:
                                 non_photo_score: float,
                                 inpainting_score: float,
                                 is_non_photo: bool,
-                                metadata: Dict) -> Dict[str, float]:
+                                metadata: Dict,
+                                is_platform_reencoded: bool = False,
+                                has_old_timestamp: bool = False) -> Dict[str, float]:
         """
         Compute pathway probabilities using signal fusion.
         
         CRITICAL I2I GATING:
         - I2I requires i2i_evidence_score >= 0.60 with positive transform evidence
         - If diffusion_score >= 0.60 and I2I gate fails => T2I
+        
+        NEW: Platform + old timestamp override:
+        - If platform_reencoded AND old_timestamp (pre-2020):
+          - Boost real_photo probability
+          - Reduce T2I confidence (diffusion artifacts may be from platform processing)
         """
         probs = {
             PathwayType.REAL_PHOTO: 0.0,
@@ -368,34 +497,56 @@ class PathwayClassifier:
             PathwayType.UNKNOWN: 0.0
         }
         
+        # === NEW: Platform + old timestamp strongly suggests real photo ===
+        platform_photo_boost = 0.0
+        if is_platform_reencoded and has_old_timestamp:
+            # Very strong indicator - 2013 Instagram photo can't be AI
+            platform_photo_boost = 0.40
+        elif is_platform_reencoded:
+            # Platform alone gives smaller boost
+            platform_photo_boost = 0.15
+        elif has_old_timestamp:
+            # Old timestamp alone (without platform) gives small boost
+            platform_photo_boost = 0.10
+        
         # === REAL PHOTO ===
         # High camera evidence + low diffusion
         if camera_evidence_score > 0.5 and diffusion_score < 0.4:
-            probs[PathwayType.REAL_PHOTO] = 0.7 + camera_evidence_score * 0.2
+            probs[PathwayType.REAL_PHOTO] = 0.7 + camera_evidence_score * 0.2 + platform_photo_boost
         elif camera_evidence_score > 0.3 and diffusion_score < 0.5:
-            probs[PathwayType.REAL_PHOTO] = 0.4 + camera_evidence_score * 0.3
+            probs[PathwayType.REAL_PHOTO] = 0.4 + camera_evidence_score * 0.3 + platform_photo_boost
         elif diffusion_score < 0.3:
-            probs[PathwayType.REAL_PHOTO] = 0.3 + (1 - diffusion_score) * 0.3
+            probs[PathwayType.REAL_PHOTO] = 0.3 + (1 - diffusion_score) * 0.3 + platform_photo_boost
+        elif platform_photo_boost > 0:
+            # Even with higher diffusion, platform + old timestamp suggests real photo
+            probs[PathwayType.REAL_PHOTO] = 0.2 + platform_photo_boost
         
         # === T2I (Text-to-Image) ===
         # High diffusion + NO I2I evidence (or I2I evidence below threshold)
+        # NEW: Reduce T2I probability if platform + old timestamp
+        t2i_penalty = 0.0
+        if is_platform_reencoded and has_old_timestamp:
+            t2i_penalty = 0.35  # Strong penalty - old platform photos aren't AI
+        elif is_platform_reencoded:
+            t2i_penalty = 0.15  # Moderate penalty
+        
         if diffusion_score >= self.diffusion_high_threshold:
             if i2i_evidence_score < self.i2i_evidence_threshold:
                 # Strong T2I signal - I2I gate failed
-                probs[PathwayType.T2I] = 0.7 + diffusion_score * 0.25
+                probs[PathwayType.T2I] = max(0, 0.7 + diffusion_score * 0.25 - t2i_penalty)
             else:
                 # Some T2I but I2I evidence present
-                probs[PathwayType.T2I] = 0.3 + diffusion_score * 0.2
+                probs[PathwayType.T2I] = max(0, 0.3 + diffusion_score * 0.2 - t2i_penalty)
         elif diffusion_score >= self.diffusion_medium_threshold:
             if i2i_evidence_score < 0.4:
-                probs[PathwayType.T2I] = 0.5 + diffusion_score * 0.3
+                probs[PathwayType.T2I] = max(0, 0.5 + diffusion_score * 0.3 - t2i_penalty)
             elif i2i_evidence_score < self.i2i_evidence_threshold:
                 # Medium diffusion, some I2I hints but not enough
-                probs[PathwayType.T2I] = 0.4 + diffusion_score * 0.2
+                probs[PathwayType.T2I] = max(0, 0.4 + diffusion_score * 0.2 - t2i_penalty)
         elif diffusion_score >= 0.40:
             # Lower diffusion but still possible T2I
             if i2i_evidence_score < 0.3:
-                probs[PathwayType.T2I] = 0.3 + diffusion_score * 0.2
+                probs[PathwayType.T2I] = max(0, 0.3 + diffusion_score * 0.2 - t2i_penalty)
         
         # === I2I (Image-to-Image) ===
         # CRITICAL: Requires i2i_evidence_score >= 0.60 (positive transform evidence)
@@ -439,13 +590,20 @@ class PathwayClassifier:
         return probs
     
     def _determine_prediction(self, probs: Dict[str, float],
-                               evidence: Dict) -> Tuple[str, str]:
+                               evidence: Dict,
+                               is_platform_reencoded: bool = False,
+                               has_old_timestamp: bool = False) -> Tuple[str, str]:
         """
         Determine final prediction and confidence.
         
         CRITICAL I2I GATING:
         - I2I cannot be top-1 unless i2i_evidence_score >= 0.60
         - If diffusion_score >= 0.60 and I2I gate fails => pathway = T2I
+        
+        NEW: Platform + old timestamp override:
+        - If platform_reencoded AND old_timestamp (pre-2020):
+          - T2I cannot be "high" confidence
+          - Prefer real_photo if probabilities are close
         """
         
         # Find top prediction
@@ -485,15 +643,34 @@ class PathwayClassifier:
                     top_pred = PathwayType.UNKNOWN
                     confidence = "low"
         
+        # === NEW: Platform + old timestamp override for T2I ===
+        # If platform_reencoded AND old_timestamp, T2I confidence should be capped
+        if top_pred == PathwayType.T2I and is_platform_reencoded and has_old_timestamp:
+            # Old platform photos (pre-2020) cannot be AI-generated
+            # Check if real_photo is close
+            real_photo_prob = probs.get(PathwayType.REAL_PHOTO, 0)
+            
+            if real_photo_prob >= 0.25:
+                # Switch to real_photo
+                top_pred = PathwayType.REAL_PHOTO
+                confidence = "medium"
+                evidence["notes"].append("Switched to real_photo (platform + old timestamp override)")
+            else:
+                # Cap T2I confidence to "low"
+                confidence = "low"
+                evidence["notes"].append("T2I confidence capped (platform + old timestamp)")
+        
         # === ADDITIONAL CHECK: High diffusion without I2I evidence => T2I ===
         # Even if I2I wasn't top-1, ensure we don't miss T2I
         if top_pred == PathwayType.UNKNOWN:
             diffusion_score = evidence.get("diffusion_score", 0)
             i2i_evidence_score = evidence.get("i2i_evidence_score", 0)
             
+            # But NOT if platform + old timestamp
             if diffusion_score >= 0.60 and i2i_evidence_score < self.i2i_evidence_threshold:
-                top_pred = PathwayType.T2I
-                confidence = "medium" if diffusion_score >= 0.70 else "low"
+                if not (is_platform_reencoded and has_old_timestamp):
+                    top_pred = PathwayType.T2I
+                    confidence = "medium" if diffusion_score >= 0.70 else "low"
         
         return top_pred, confidence
     
@@ -578,9 +755,19 @@ class PathwayClassifier:
                        camera_evidence: Dict,
                        inpainting_score: float,
                        is_non_photo: bool,
-                       pred: str) -> List[str]:
+                       pred: str,
+                       is_platform_reencoded: bool = False,
+                       has_old_timestamp: bool = False) -> List[str]:
         """Build human-readable signal explanations"""
         signals = []
+        
+        # Platform + old timestamp (most important for real photos)
+        if is_platform_reencoded and has_old_timestamp:
+            signals.append("Platform re-encoding + pre-2020 timestamp (strong real photo indicator)")
+        elif is_platform_reencoded:
+            signals.append("Platform re-encoding detected (Instagram/WhatsApp/etc.)")
+        elif has_old_timestamp:
+            signals.append("Pre-2020 timestamp (before AI became widespread)")
         
         if diffusion_score >= 0.7:
             signals.append(f"Strong diffusion fingerprint ({diffusion_score:.0%})")
@@ -605,7 +792,7 @@ class PathwayClassifier:
         if is_non_photo:
             signals.append("Non-photo content (CGI/3D/Illustration)")
         
-        return signals[:8]  # Limit to 8 signals
+        return signals[:10]  # Limit to 10 signals
 
 
 # Global instance

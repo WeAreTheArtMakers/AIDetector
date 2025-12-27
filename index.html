@@ -168,10 +168,34 @@
                     
                     <div class="feature-card rounded-2xl p-5">
                         <div class="w-10 h-10 rounded-xl bg-pink-500/10 flex items-center justify-center mb-3">
-                            <i data-lucide="palette" class="w-5 h-5 text-pink-400"></i>
+                            <i data-lucide="fingerprint" class="w-5 h-5 text-pink-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_fingerprint">Üretici Parmak İzi</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_fingerprint_desc">Midjourney, DALL-E, Stable Diffusion, Grok gibi AI araçlarını tespit.</p>
+                    </div>
+                    
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="type" class="w-5 h-5 text-cyan-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_ocr">Metin Analizi (OCR)</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_ocr_desc">AI üretimi görsellerdeki anlamsız/bozuk metin artefaktlarını tespit.</p>
+                    </div>
+                    
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="palette" class="w-5 h-5 text-emerald-400"></i>
                         </div>
                         <h3 class="font-semibold text-white mb-1" data-i18n="feature_content">İçerik Türü Tespiti</h3>
                         <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_content_desc">Fotoğraf, CGI, illüstrasyon ve dijital sanat ayrımı.</p>
+                    </div>
+                    
+                    <div class="feature-card rounded-2xl p-5">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center mb-3">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-amber-400"></i>
+                        </div>
+                        <h3 class="font-semibold text-white mb-1" data-i18n="feature_prompt">Prompt Analizi</h3>
+                        <p class="text-xs text-gray-400 leading-relaxed" data-i18n="feature_prompt_desc">Metadata'dan prompt kurtarma ve görsel içerikten prompt tahmini.</p>
                     </div>
                 </div>
                 
@@ -182,12 +206,12 @@
                         <p class="text-xs text-gray-400" data-i18n="stat_models">AI Modeli</p>
                     </div>
                     <div class="stat-card rounded-xl p-4 text-center">
-                        <p class="text-2xl font-bold text-purple-400">50+</p>
-                        <p class="text-xs text-gray-400" data-i18n="stat_metadata">Metadata Alanı</p>
+                        <p class="text-2xl font-bold text-purple-400">8+</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_generators">Üretici Profili</p>
                     </div>
                     <div class="stat-card rounded-xl p-4 text-center">
-                        <p class="text-2xl font-bold text-pink-400">CLIP</p>
-                        <p class="text-xs text-gray-400" data-i18n="stat_semantic">Semantik Analiz</p>
+                        <p class="text-2xl font-bold text-pink-400">OCR</p>
+                        <p class="text-xs text-gray-400" data-i18n="stat_ocr">Metin Analizi</p>
                     </div>
                     <div class="stat-card rounded-xl p-4 text-center">
                         <p class="text-2xl font-bold text-cyan-400">GPS</p>
@@ -364,6 +388,15 @@
                     </div>
                 </div>
 
+                <!-- Provenance Section (NEW) -->
+                <div class="glass rounded-2xl p-5">
+                    <h4 class="font-semibold mb-4 flex items-center gap-2 text-sm text-white">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                        <span data-i18n="provenance_section">Provenance / Köken Doğrulama</span>
+                    </h4>
+                    <div id="provenanceContainer"></div>
+                </div>
+
                 <!-- Three Column Grid -->
                 <div class="grid md:grid-cols-3 gap-6">
                     <!-- Camera -->
@@ -463,6 +496,62 @@
                         </div>
                         <div id="pathwayContent" class="accordion-content px-5 pb-5">
                             <div id="pathwayContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Text Forensics (OCR + AI Text Artifacts) -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="textForensicsContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="type" class="w-4 h-4 text-cyan-400"></i>
+                                <span data-i18n="text_forensics_section">Metin Analizi (OCR)</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="textForensicsContent" class="accordion-content px-5 pb-5">
+                            <div id="textForensicsContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generator Fingerprint (AI Tool Identification) -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="generatorFingerprintContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="fingerprint" class="w-4 h-4 text-pink-400"></i>
+                                <span data-i18n="generator_fingerprint_section">Üretici Parmak İzi</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="generatorFingerprintContent" class="accordion-content px-5 pb-5">
+                            <div id="generatorFingerprintContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Prompt Hypothesis (for AI-generated images) -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="promptHypothesisContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="sparkles" class="w-4 h-4 text-purple-400"></i>
+                                <span data-i18n="prompt_hypothesis_section">Prompt Tahmini (Hipotez)</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="promptHypothesisContent" class="accordion-content px-5 pb-5">
+                            <div id="promptHypothesisContainer"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generative Artifact Heatmap -->
+                    <div class="border-b border-gray-700/30">
+                        <div class="accordion-toggle p-5 flex items-center justify-between cursor-pointer hover:bg-gray-800/30 transition-colors" data-target="generativeHeatmapContent">
+                            <h4 class="font-semibold flex items-center gap-2 text-sm text-white">
+                                <i data-lucide="flame" class="w-4 h-4 text-cyan-400"></i>
+                                <span data-i18n="generative_heatmap_section">Üretim Artefakt Haritası</span>
+                            </h4>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 chevron"></i>
+                        </div>
+                        <div id="generativeHeatmapContent" class="accordion-content px-5 pb-5">
+                            <div id="generativeHeatmapContainer"></div>
                         </div>
                     </div>
                     

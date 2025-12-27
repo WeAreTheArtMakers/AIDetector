@@ -1,8 +1,8 @@
-# AI Image Detector - Sanal Ortam Kurulumu
+# AI Image Detector - Setup Guide
 
-## 🚀 Hızlı Başlangıç (Önerilen)
+## 🚀 Quick Start (Recommended)
 
-### 1. Sanal Ortam Kurulumu
+### 1. Setup Virtual Environment
 ```bash
 # macOS/Linux
 ./setup_venv.sh
@@ -11,9 +11,9 @@
 setup_venv.bat
 ```
 
-### 2. Uygulamayı Çalıştırma
+### 2. Run the Application
 ```bash
-# Terminal 1 - Backend (Sanal Ortam)
+# Terminal 1 - Backend (Virtual Environment)
 ./run_backend_venv.sh     # macOS/Linux
 run_backend_venv.bat      # Windows
 
@@ -22,27 +22,41 @@ run_backend_venv.bat      # Windows
 run_frontend.bat          # Windows
 ```
 
-## 🌐 Erişim Adresleri
+## 🌐 Access URLs
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8001
-- **API Docs**: http://localhost:8001/docs
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-## ⏱️ İlk Çalıştırma
-- **Model İndirme**: İlk çalıştırmada ~346MB model indirilir (2-5 dakika)
-- **Sonraki Başlatmalar**: ~10-15 saniye
+## ⏱️ First Run
+- **Model Download**: First run downloads ~500MB models (3-10 minutes)
+- **Subsequent Starts**: ~15-30 seconds
 
-## 🔧 Manuel Kurulum (Alternatif)
+## 📦 Dependencies
+
+### Required
+- Python 3.8+
+- 4GB+ RAM (8GB recommended)
+- 2GB+ disk space
+
+### Optional (for full features)
+- **EasyOCR**: For text forensics (OCR)
+  ```bash
+  pip install easyocr
+  ```
+- **CUDA GPU**: For faster inference
+
+## 🔧 Manual Installation
 
 ### Backend
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
-# veya
+# or
 venv\Scripts\activate.bat  # Windows
 
 pip install -r requirements.txt
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Frontend
@@ -50,46 +64,70 @@ python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 python3 -m http.server 3000
 ```
 
-## 🧪 Test Etme
-1. Frontend'e git: http://localhost:3000
-2. Bir görsel yükle (JPG, PNG, WebP)
-3. "Analiz Et" butonuna bas
-4. Backend'den gelen AI analiz sonuçlarını gör
+## 🧪 Testing
+1. Go to Frontend: http://localhost:3000
+2. Upload an image (JPG, PNG, WebP, HEIC)
+3. Click "Forensic Analysis" button
+4. View AI analysis results
 
-## ⚠️ Sorun Giderme
+## ⚠️ Troubleshooting
 
-### "Address already in use" Hatası:
+### "Address already in use" Error:
 ```bash
-# Port 8001 kullanımda ise farklı port dene
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+# Try different port
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
-# script.js'de BACKEND_URL'i güncelle
-const BACKEND_URL = 'http://localhost:8002';
+# Update BACKEND_URL in script.js
+const BACKEND_URL = 'http://localhost:8001';
 ```
 
-### Model İndirme Hatası:
-- İnternet bağlantısını kontrol et
-- Disk alanını kontrol et (min 1GB boş alan)
-- Firewall/antivirus ayarlarını kontrol et
+### Model Download Error:
+- Check internet connection
+- Check disk space (min 2GB free)
+- Check firewall/antivirus settings
 
-### CORS Hatası:
-- Backend'in çalıştığından emin ol
-- Browser console'da hata detaylarını kontrol et
-- Backend loglarını kontrol et
+### CORS Error:
+- Ensure backend is running
+- Check browser console for details
+- Check backend logs
 
-### Dependency Conflict:
-- Sanal ortam kullan (önerilen)
-- Eski Python paketlerini temizle
-- Python 3.8+ kullan
+### OCR Not Working:
+```bash
+# Install EasyOCR
+pip install easyocr
 
-## 📊 Performans
-- **İlk model yükleme**: 2-5 dakika
-- **Analiz süresi**: 1-3 saniye
-- **Desteklenen formatlar**: JPG, PNG, WebP, BMP
-- **Max dosya boyutu**: 10MB
-- **Önerilen görsel boyutu**: 1024x1024 ve altı
+# Or install Tesseract
+# macOS: brew install tesseract
+# Ubuntu: sudo apt install tesseract-ocr
+pip install pytesseract
+```
 
-## 🔒 Güvenlik
-- Bu bir MVP/demo uygulamasıdır
-- Production kullanımı için ek güvenlik gereklidir
-- Sonuçlar olasılık tahminidir, kesin değildir
+### Memory Error:
+- Close other applications
+- Use smaller images (< 2048px)
+- Reduce batch size in config
+
+## 📊 Performance
+- **First model load**: 3-10 minutes
+- **Analysis time**: 3-8 seconds
+- **Supported formats**: JPG, PNG, WebP, HEIC, BMP
+- **Max file size**: 10MB
+- **Recommended image size**: 2048x2048 and below
+
+## 🔒 Security Notes
+- This is a forensic analysis tool
+- Results are probabilistic, not definitive
+- For production use, add authentication
+- Do not expose backend directly to internet
+
+## 📝 Feature Flags
+
+Edit `backend/forensic/config.py` to enable/disable features:
+
+```python
+ENABLE_TEXT_FORENSICS = True          # OCR + AI text artifacts
+ENABLE_GENERATOR_FINGERPRINT = True   # AI tool identification
+ENABLE_PROMPT_RECOVERY = True         # Metadata prompt extraction
+ENABLE_BLIP_CAPTIONING = True         # Visual prompt inference
+ENABLE_GENERATIVE_HEATMAP = True      # AI artifact visualization
+```

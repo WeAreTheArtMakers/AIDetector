@@ -260,8 +260,11 @@ class AIImageDetector {
         // Findings
         this.displayFindings(data);
         
-        // GPS
-        this.displayGPS(data.gps || {});
+        // GPS - pass verdict_text for GPS consistency messaging
+        this.displayGPS(data.gps || {}, data.verdict_text);
+        
+        // Provenance (NEW)
+        this.displayProvenance(data.provenance, data.scores);
         
         // Camera
         this.displayCamera(data.camera || {}, data.metadata || {});
@@ -279,11 +282,380 @@ class AIImageDetector {
         this.displayJPEGForensics(data.jpeg_forensics);
         this.displayAIType(data.ai_generation_type);
         this.displayPathway(data.pathway, data.diffusion_fingerprint);
+        this.displayTextForensics(data.text_forensics);
+        this.displayGeneratorFingerprint(data.generator_fingerprint);
         this.displayStatistics(data.statistics);
         this.displayExtendedMetadata(data.metadata_extended);
         this.displayManipulation(data.manipulation, data.localization, data.edit_assessment, data.visualization);
+        this.displayPromptAnalysis(data.prompt_analysis, data.prompt_hypothesis, data.prompt_hypothesis_v2);
+        this.displayGenerativeHeatmap(data.overlays?.generative_artifacts_v2, data.scores);
         
         this.initIcons();
+    }
+
+    displayPromptHypothesis(promptHypothesis, promptHypothesisV2 = null) {
+        const container = document.getElementById('promptHypothesisContainer');
+        if (!container) return;
+        
+        // Prefer V2 if available and enabled
+        const useV2 = promptHypothesisV2 && promptHypothesisV2.enabled;
+        const data = useV2 ? promptHypothesisV2 : promptHypothesis;
+        
+        if (!data || !data.enabled) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">${this.t('prompt_hypothesis_disabled')}</p>`;
+            return;
+        }
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        
+        // Get hypothesis text (V2 uses different field names)
+        let hypothesis, hypothesisShort;
+        if (useV2) {
+            hypothesis = lang === 'en' ? data.en_long : data.tr_long;
+            hypothesisShort = lang === 'en' ? data.en_short : data.tr_short;
+        } else {
+            hypothesis = lang === 'en' ? data.hypothesis_en : data.hypothesis_tr;
+            hypothesisShort = lang === 'en' ? data.hypothesis_short_en : data.hypothesis_short_tr;
+        }
+        
+        const disclaimer = lang === 'en' ? data.disclaimer_en : data.disclaimer_tr;
+        const confidence = data.confidence || 'low';
+        const reasons = useV2 ? (data.why_reasons || []) : (data.reasons || []);
+        const attributes = useV2 ? (data.slots || {}) : (data.extracted_attributes || {});
+        const negatives = useV2 ? (data.negative_suggestions || []) : (attributes.negative_prompts || []);
+        
+        const confidenceColors = {
+            'high': 'green',
+            'medium': 'yellow',
+            'low': 'orange'
+        };
+        const confColor = confidenceColors[confidence] || 'orange';
+        
+        let html = `
+            <div class="space-y-4">
+                <!-- Disclaimer Banner (ALWAYS SHOWN) -->
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                        <p class="text-xs text-amber-300">${disclaimer || (lang === 'en' 
+                            ? 'This is a hypothesis inferred from visual content. The original prompt cannot be known with certainty.'
+                            : 'Bu, görsel içerikten çıkarılan bir tahmindir. Orijinal prompt kesin olarak bilinemez.')}</p>
+                    </div>
+                </div>
+                
+                <!-- Short Hypothesis -->
+                ${hypothesisShort ? `
+                <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-purple-400"></i>
+                        <span class="text-sm font-semibold text-purple-400">
+                            ${lang === 'en' ? 'Short Prompt' : 'Kısa Prompt'}
+                        </span>
+                        <span class="text-xs px-2 py-0.5 bg-${confColor}-500/20 text-${confColor}-400 rounded ml-auto">
+                            ${lang === 'en' ? 'Confidence' : 'Güven'}: ${confidence}
+                        </span>
+                    </div>
+                    <p class="text-sm text-slate-200 font-mono bg-slate-800/50 rounded p-2">${hypothesisShort}</p>
+                </div>
+                ` : ''}
+                
+                <!-- Detailed Hypothesis -->
+                <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-purple-400"></i>
+                            <span class="font-semibold text-purple-400">
+                                ${lang === 'en' ? 'Detailed Prompt Hypothesis' : 'Detaylı Prompt Tahmini'}
+                            </span>
+                        </div>
+                        ${useV2 ? '<span class="text-xs text-purple-300">V2</span>' : ''}
+                    </div>
+                    <p class="text-sm text-slate-200 font-mono bg-slate-800/50 rounded p-3">${hypothesis}</p>
+                </div>
+        `;
+        
+        // Extracted Attributes / Slots (collapsible)
+        const hasAttributes = Object.keys(attributes).some(k => attributes[k] && k !== 'extraction_confidence');
+        if (hasAttributes) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Extracted Attributes' : 'Çıkarılan Özellikler'}
+                    </summary>
+                    <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+            `;
+            
+            const attrLabels = {
+                'subject': { en: 'Subject', tr: 'Konu' },
+                'subject_types': { en: 'Subject Types', tr: 'Konu Türleri' },
+                'setting': { en: 'Setting', tr: 'Ortam' },
+                'environment': { en: 'Environment', tr: 'Çevre' },
+                'location_type': { en: 'Location', tr: 'Konum' },
+                'lighting': { en: 'Lighting', tr: 'Aydınlatma' },
+                'lighting_type': { en: 'Lighting Type', tr: 'Aydınlatma Türü' },
+                'camera_style': { en: 'Camera Style', tr: 'Kamera Stili' },
+                'shot_type': { en: 'Shot Type', tr: 'Çekim Türü' },
+                'depth_of_field': { en: 'Depth of Field', tr: 'Alan Derinliği' },
+                'aesthetic': { en: 'Aesthetic', tr: 'Estetik' },
+                'style': { en: 'Style', tr: 'Stil' },
+                'aspect_ratio': { en: 'Aspect Ratio', tr: 'En-Boy Oranı' },
+                'time_of_day': { en: 'Time of Day', tr: 'Günün Saati' },
+                'model_family_guess': { en: 'Model Family', tr: 'Model Ailesi' }
+            };
+            
+            for (const [key, value] of Object.entries(attributes)) {
+                if (value && key !== 'negative_prompts' && key !== 'extraction_confidence' && attrLabels[key]) {
+                    const label = lang === 'en' ? attrLabels[key].en : attrLabels[key].tr;
+                    const displayValue = Array.isArray(value) ? value.join(', ') : value;
+                    if (displayValue) {
+                        html += `
+                            <div class="bg-slate-800/30 rounded p-2">
+                                <span class="text-slate-500">${label}</span>
+                                <p class="text-slate-300">${displayValue}</p>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            
+            html += '</div></details>';
+        }
+        
+        // Suggested Negative Prompts (collapsible)
+        if (negatives.length > 0) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Suggested Negative Prompts' : 'Önerilen Negatif Promptlar'}
+                    </summary>
+                    <div class="mt-2 text-xs text-slate-400 bg-slate-800/30 rounded p-2 font-mono">
+                        ${negatives.join(', ')}
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1">
+                        ${lang === 'en' 
+                            ? 'Note: These are common negative prompts, not necessarily used in the original.'
+                            : 'Not: Bunlar yaygın negatif promptlardır, orijinalde kullanılmış olması gerekmez.'}
+                    </p>
+                </details>
+            `;
+        }
+        
+        // Reasons / Why (collapsible)
+        if (reasons.length > 0) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-500 cursor-pointer">
+                        ${lang === 'en' ? 'Analysis Reasons' : 'Analiz Nedenleri'}
+                    </summary>
+                    <ul class="mt-1 text-xs text-slate-400 space-y-0.5">
+                        ${reasons.map(r => `<li>• ${r}</li>`).join('')}
+                    </ul>
+                </details>
+            `;
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    displayPromptAnalysis(promptAnalysis, promptHypothesis, promptHypothesisV2) {
+        const container = document.getElementById('promptHypothesisContainer');
+        if (!container) return;
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        
+        // Check if we have the new unified prompt analysis
+        if (promptAnalysis && promptAnalysis.enabled) {
+            this._displayUnifiedPromptAnalysis(promptAnalysis, lang);
+            return;
+        }
+        
+        // Fallback to old displayPromptHypothesis
+        this.displayPromptHypothesis(promptHypothesis, promptHypothesisV2);
+    }
+    
+    _displayUnifiedPromptAnalysis(data, lang) {
+        const container = document.getElementById('promptHypothesisContainer');
+        if (!container) return;
+        
+        const hasRecovered = data.has_recovered;
+        const hasReconstructed = data.has_reconstructed;
+        const source = data.source || 'NOT_AVAILABLE';
+        const trustLevel = data.trust_level || 'none';
+        
+        // Trust level colors and icons
+        const trustConfig = {
+            'high': { color: 'green', icon: 'shield-check', label: { en: 'High Trust', tr: 'Yüksek Güven' } },
+            'medium': { color: 'yellow', icon: 'shield', label: { en: 'Medium Trust', tr: 'Orta Güven' } },
+            'low': { color: 'orange', icon: 'alert-triangle', label: { en: 'Low Trust', tr: 'Düşük Güven' } },
+            'none': { color: 'slate', icon: 'help-circle', label: { en: 'Unknown', tr: 'Bilinmiyor' } }
+        };
+        
+        const trust = trustConfig[trustLevel] || trustConfig.none;
+        
+        // Source labels
+        const sourceLabels = {
+            'RECOVERED_SIGNED': { en: 'Recovered (Signed)', tr: 'Kurtarıldı (İmzalı)' },
+            'RECOVERED_UNSIGNED': { en: 'Recovered (Metadata)', tr: 'Kurtarıldı (Metadata)' },
+            'RECONSTRUCTED_HIGH': { en: 'Reconstructed (High Conf.)', tr: 'Yeniden Oluşturuldu (Yüksek)' },
+            'RECONSTRUCTED_MEDIUM': { en: 'Reconstructed (Medium Conf.)', tr: 'Yeniden Oluşturuldu (Orta)' },
+            'RECONSTRUCTED_LOW': { en: 'Reconstructed (Low Conf.)', tr: 'Yeniden Oluşturuldu (Düşük)' },
+            'NOT_AVAILABLE': { en: 'Not Available', tr: 'Mevcut Değil' }
+        };
+        
+        const sourceLabel = sourceLabels[source] || sourceLabels.NOT_AVAILABLE;
+        
+        let html = '<div class="space-y-4">';
+        
+        // === RECOVERED PROMPT (if available) ===
+        if (hasRecovered && data.recovered) {
+            const recovered = data.recovered;
+            html += `
+                <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="file-check" class="w-5 h-5 text-green-400"></i>
+                            <span class="font-semibold text-green-400">
+                                ${lang === 'en' ? 'Recovered Prompt' : 'Kurtarılan Prompt'}
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded">
+                                ${sourceLabel[lang]}
+                            </span>
+                            ${recovered.generator ? `<span class="text-xs text-slate-400">${recovered.generator}</span>` : ''}
+                        </div>
+                    </div>
+                    
+                    <!-- Main Prompt -->
+                    <div class="mb-3">
+                        <label class="text-xs text-slate-400 mb-1 block">${lang === 'en' ? 'Prompt' : 'Prompt'}</label>
+                        <p class="text-sm text-slate-200 font-mono bg-slate-800/50 rounded p-3 break-words">${recovered.prompt || '-'}</p>
+                    </div>
+                    
+                    <!-- Negative Prompt -->
+                    ${recovered.negative_prompt ? `
+                    <div class="mb-3">
+                        <label class="text-xs text-slate-400 mb-1 block">${lang === 'en' ? 'Negative Prompt' : 'Negatif Prompt'}</label>
+                        <p class="text-xs text-slate-300 font-mono bg-slate-800/50 rounded p-2 break-words">${recovered.negative_prompt}</p>
+                    </div>
+                    ` : ''}
+                    
+                    <!-- Parameters (collapsible) -->
+                    ${recovered.parameters && Object.keys(recovered.parameters).length > 0 ? `
+                    <details class="mt-2">
+                        <summary class="text-xs text-green-400 cursor-pointer">
+                            ${lang === 'en' ? 'Generation Parameters' : 'Üretim Parametreleri'} (${Object.keys(recovered.parameters).length})
+                        </summary>
+                        <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                            ${Object.entries(recovered.parameters).map(([key, value]) => `
+                                <div class="bg-slate-800/30 rounded p-2">
+                                    <span class="text-slate-500">${key}</span>
+                                    <p class="text-slate-300 font-mono">${Array.isArray(value) ? value.join(', ') : value}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </details>
+                    ` : ''}
+                    
+                    <!-- Source info -->
+                    <p class="text-xs text-green-400/70 mt-2">
+                        <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                        ${lang === 'en' ? `Source: ${recovered.source}` : `Kaynak: ${recovered.source}`}
+                    </p>
+                </div>
+            `;
+        }
+        
+        // === RECONSTRUCTED PROMPT (if available and no recovered) ===
+        if (hasReconstructed && data.reconstructed) {
+            const reconstructed = data.reconstructed;
+            const confColor = reconstructed.confidence === 'high' ? 'green' : 
+                             reconstructed.confidence === 'medium' ? 'yellow' : 'orange';
+            
+            html += `
+                <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-purple-400"></i>
+                            <span class="font-semibold text-purple-400">
+                                ${lang === 'en' ? 'Reconstructed Prompt (Hypothesis)' : 'Yeniden Oluşturulan Prompt (Tahmin)'}
+                            </span>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 bg-${confColor}-500/20 text-${confColor}-400 rounded">
+                            ${lang === 'en' ? 'Confidence' : 'Güven'}: ${reconstructed.confidence}
+                        </span>
+                    </div>
+                    
+                    <!-- Short Prompt -->
+                    <div class="mb-3">
+                        <label class="text-xs text-slate-400 mb-1 block">${lang === 'en' ? 'Short Prompt' : 'Kısa Prompt'}</label>
+                        <p class="text-sm text-slate-200 font-mono bg-slate-800/50 rounded p-2">
+                            ${lang === 'en' ? reconstructed.short_en : reconstructed.short_tr}
+                        </p>
+                    </div>
+                    
+                    <!-- Long Prompt -->
+                    <div class="mb-3">
+                        <label class="text-xs text-slate-400 mb-1 block">${lang === 'en' ? 'Detailed Prompt' : 'Detaylı Prompt'}</label>
+                        <p class="text-sm text-slate-200 font-mono bg-slate-800/50 rounded p-3 break-words">
+                            ${lang === 'en' ? reconstructed.long_en : reconstructed.long_tr}
+                        </p>
+                    </div>
+                    
+                    <!-- Negative Prompt -->
+                    <details class="mt-2">
+                        <summary class="text-xs text-slate-400 cursor-pointer">
+                            ${lang === 'en' ? 'Suggested Negative Prompt' : 'Önerilen Negatif Prompt'}
+                        </summary>
+                        <p class="mt-2 text-xs text-slate-300 font-mono bg-slate-800/30 rounded p-2">
+                            ${lang === 'en' ? reconstructed.negative_en : reconstructed.negative_tr}
+                        </p>
+                    </details>
+                </div>
+            `;
+        }
+        
+        // === DISCLAIMER (always shown) ===
+        const disclaimer = lang === 'en' ? data.disclaimer_en : data.disclaimer_tr;
+        if (disclaimer) {
+            html += `
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                        <p class="text-xs text-amber-300">${disclaimer}</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // === TRUST LEVEL INDICATOR ===
+        html += `
+            <div class="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-700/50">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="${trust.icon}" class="w-4 h-4 text-${trust.color}-400"></i>
+                    <span>${trust.label[lang]}</span>
+                </div>
+                <span>${sourceLabel[lang]}</span>
+            </div>
+        `;
+        
+        // === WARNINGS/NOTES ===
+        if (data.warnings && data.warnings.length > 0) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-amber-400 cursor-pointer">
+                        ${lang === 'en' ? 'Warnings' : 'Uyarılar'} (${data.warnings.length})
+                    </summary>
+                    <ul class="mt-1 text-xs text-amber-300 space-y-0.5">
+                        ${data.warnings.map(w => `<li>• ${w}</li>`).join('')}
+                    </ul>
+                </details>
+            `;
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
     }
 
     displayVisualization(visualization, editAssessment) {
@@ -315,10 +687,35 @@ class AIImageDetector {
                 en: 'Suspicious Regions',
                 color: 'red',
                 icon: 'alert-triangle'
+            },
+            't2i_artifacts': { 
+                tr: 'AI Üretim Artefaktları', 
+                en: 'AI Generation Artifacts',
+                color: 'cyan',
+                icon: 'sparkles'
             }
         };
         
         const modeInfo = modeLabels[mode] || modeLabels.global_edit;
+        
+        // Determine which overlay types are available based on edit assessment
+        const editType = editAssessment?.edit_type || 'none_detected';
+        const globalScore = editAssessment?.global_adjustment_score || 0;
+        const localScore = editAssessment?.local_manipulation_score || 0;
+        const genArtifactsScore = editAssessment?.generator_artifacts_score || 0;
+        const boundaryCorroborated = editAssessment?.boundary_corroborated || false;
+        
+        // Build overlay toggle buttons
+        const overlayTypes = [];
+        if (globalScore >= 0.30) {
+            overlayTypes.push({ key: 'global', label: lang === 'en' ? 'Global' : 'Global', color: 'blue', active: mode === 'global_edit' });
+        }
+        if (localScore >= 0.50 && boundaryCorroborated) {
+            overlayTypes.push({ key: 'local', label: lang === 'en' ? 'Local Splice' : 'Yerel Yapıştırma', color: 'red', active: mode === 'local_manipulation' });
+        }
+        if (genArtifactsScore >= 0.30 || mode === 't2i_artifacts') {
+            overlayTypes.push({ key: 't2i', label: lang === 'en' ? 'Generative Artifacts' : 'Üretim Artefaktları', color: 'cyan', active: mode === 't2i_artifacts' });
+        }
         
         let html = `
             <div class="space-y-4">
@@ -335,6 +732,29 @@ class AIImageDetector {
                     ` : ''}
                 </div>
         `;
+        
+        // Overlay Type Toggle Buttons (if multiple types available)
+        if (overlayTypes.length > 1) {
+            html += `
+                <div class="flex gap-2 flex-wrap">
+                    ${overlayTypes.map(ot => `
+                        <button class="overlay-type-btn px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                            ${ot.active 
+                                ? `bg-${ot.color}-500/30 text-${ot.color}-300 border border-${ot.color}-500/50` 
+                                : 'bg-slate-700/50 text-slate-400 border border-slate-600/50 hover:bg-slate-600/50'}"
+                            data-overlay-type="${ot.key}"
+                            ${ot.active ? 'disabled' : ''}>
+                            ${ot.label}
+                        </button>
+                    `).join('')}
+                </div>
+                <p class="text-xs text-slate-500">
+                    ${lang === 'en' 
+                        ? 'Note: Only the currently detected overlay type is shown. Other types require re-analysis.'
+                        : 'Not: Sadece tespit edilen katman türü gösterilir. Diğer türler yeniden analiz gerektirir.'}
+                </p>
+            `;
+        }
         
         // Overlay Toggle and Image
         if (heatmap && heatmap.overlay_base64) {
@@ -354,7 +774,9 @@ class AIImageDetector {
                         <div class="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-slate-300">
                             ${heatmap.type === 'global_intensity' 
                                 ? (lang === 'en' ? 'Global Intensity' : 'Global Yoğunluk')
-                                : (lang === 'en' ? 'Local Suspicion' : 'Yerel Şüphe')}
+                                : heatmap.type === 't2i_artifacts'
+                                    ? (lang === 'en' ? 'AI Artifacts' : 'AI Artefaktları')
+                                    : (lang === 'en' ? 'Local Suspicion' : 'Yerel Şüphe')}
                         </div>
                     </div>
                 </div>
@@ -373,25 +795,45 @@ class AIImageDetector {
             `;
         }
         
-        // Regions (only for local_manipulation)
-        if (mode === 'local_manipulation' && regions.length > 0) {
+        // Regions (for local_manipulation OR t2i_artifacts)
+        if ((mode === 'local_manipulation' || mode === 't2i_artifacts') && regions.length > 0) {
+            const regionTitle = mode === 't2i_artifacts' 
+                ? (lang === 'en' ? 'Artifact Regions' : 'Artefakt Bölgeleri')
+                : this.t('suspicious_regions');
+            const regionColor = mode === 't2i_artifacts' ? 'cyan' : 'red';
+            
             html += `
                 <details class="mt-2">
-                    <summary class="text-xs text-red-400 cursor-pointer">
+                    <summary class="text-xs text-${regionColor}-400 cursor-pointer">
                         <i data-lucide="map-pin" class="w-3 h-3 inline mr-1"></i>
-                        ${this.t('suspicious_regions')} (${regions.length})
+                        ${regionTitle} (${regions.length})
                     </summary>
                     <div class="mt-2 space-y-1 text-xs">
             `;
             
             regions.slice(0, 5).forEach((r, i) => {
-                const reasonLabels = {
-                    'edge_matte': lang === 'en' ? 'Edge Matte' : 'Kenar Halo',
-                    'copy_move': lang === 'en' ? 'Copy-Move' : 'Kopyala-Yapıştır',
-                    'splice_noise': lang === 'en' ? 'Splice Noise' : 'Yapıştırma Gürültüsü',
-                    'inpaint_boundary': lang === 'en' ? 'Inpaint Boundary' : 'Inpaint Sınırı'
-                };
-                const reasonLabel = reasonLabels[r.reason] || r.reason;
+                // Handle both manipulation reasons and artifact tags
+                let reasonLabel = '';
+                if (r.tags && r.tags.length > 0) {
+                    // T2I artifact tags
+                    const tagLabels = {
+                        'texture_outlier': lang === 'en' ? 'Texture Outlier' : 'Doku Anomalisi',
+                        'noise_inconsistency': lang === 'en' ? 'Noise Inconsistency' : 'Gürültü Tutarsızlığı',
+                        'edge_artifact': lang === 'en' ? 'Edge Artifact' : 'Kenar Artefaktı',
+                        'color_anomaly': lang === 'en' ? 'Color Anomaly' : 'Renk Anomalisi',
+                        'generative_pattern': lang === 'en' ? 'Generative Pattern' : 'Üretim Deseni'
+                    };
+                    reasonLabel = r.tags.map(t => tagLabels[t] || t).join(', ');
+                } else if (r.reason) {
+                    // Manipulation reasons
+                    const reasonLabels = {
+                        'edge_matte': lang === 'en' ? 'Edge Matte' : 'Kenar Halo',
+                        'copy_move': lang === 'en' ? 'Copy-Move' : 'Kopyala-Yapıştır',
+                        'splice_noise': lang === 'en' ? 'Splice Noise' : 'Yapıştırma Gürültüsü',
+                        'inpaint_boundary': lang === 'en' ? 'Inpaint Boundary' : 'Inpaint Sınırı'
+                    };
+                    reasonLabel = reasonLabels[r.reason] || r.reason;
+                }
                 
                 html += `
                     <div class="flex justify-between text-slate-300 bg-slate-800/30 rounded p-1">
@@ -431,6 +873,246 @@ class AIImageDetector {
                 overlayContainer.classList.toggle('hidden');
                 toggleText.textContent = isHidden ? this.t('hide_overlay') : this.t('show_overlay');
             });
+        }
+    }
+
+    displayGenerativeHeatmap(generativeHeatmap, scores) {
+        const container = document.getElementById('generativeHeatmapContainer');
+        if (!container) return;
+        
+        if (!generativeHeatmap || !generativeHeatmap.enabled) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">${this.t('generative_heatmap_disabled')}</p>`;
+            return;
+        }
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        const heatmap = generativeHeatmap.heatmap;
+        const regions = generativeHeatmap.top_regions || [];
+        const tags = generativeHeatmap.tags || [];
+        const explainTr = generativeHeatmap.explain_tr || '';
+        const explainEn = generativeHeatmap.explain_en || '';
+        
+        // Tag labels
+        const tagLabels = {
+            'frequency_patterns': { tr: 'Frekans Desenleri', en: 'Frequency Patterns' },
+            'texture_inconsistency': { tr: 'Doku Tutarsızlığı', en: 'Texture Inconsistency' },
+            'gradient_anomalies': { tr: 'Gradyan Anomalileri', en: 'Gradient Anomalies' },
+            'edge_artifacts': { tr: 'Kenar Artefaktları', en: 'Edge Artifacts' },
+            'subtle_artifacts': { tr: 'Hafif Artefaktlar', en: 'Subtle Artifacts' },
+            'frequency_anomaly': { tr: 'Frekans Anomalisi', en: 'Frequency Anomaly' },
+            'patch_inconsistency': { tr: 'Yama Tutarsızlığı', en: 'Patch Inconsistency' },
+            'gradient_anomaly': { tr: 'Gradyan Anomalisi', en: 'Gradient Anomaly' },
+            'edge_artifact': { tr: 'Kenar Artefaktı', en: 'Edge Artifact' },
+            'generative_pattern': { tr: 'Üretim Deseni', en: 'Generative Pattern' }
+        };
+        
+        let html = `
+            <div class="space-y-4">
+                <!-- Header -->
+                <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-cyan-400"></i>
+                        <span class="font-semibold text-cyan-400">
+                            ${lang === 'en' ? 'AI Generation Artifact Intensity' : 'AI Üretim Artefakt Yoğunluğu'}
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400">
+                        ${lang === 'en' ? explainEn : explainTr}
+                    </p>
+                </div>
+        `;
+        
+        // Scores display
+        if (scores) {
+            const genScore = scores.generative_score || 0;
+            const camScore = scores.camera_score || 0;
+            const genColor = genScore >= 0.7 ? 'text-purple-400' : genScore >= 0.5 ? 'text-yellow-400' : 'text-green-400';
+            const camColor = camScore >= 0.5 ? 'text-green-400' : camScore >= 0.3 ? 'text-yellow-400' : 'text-slate-400';
+            
+            html += `
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-800/50 rounded-lg p-2">
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Generative Score' : 'Üretim Skoru'}</span>
+                        <p class="font-mono text-lg ${genColor}">${(genScore * 100).toFixed(0)}%</p>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-2">
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Camera Score' : 'Kamera Skoru'}</span>
+                        <p class="font-mono text-lg ${camColor}">${(camScore * 100).toFixed(0)}%</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Tags
+        if (tags.length > 0) {
+            html += `
+                <div class="flex flex-wrap gap-2">
+                    ${tags.map(tag => {
+                        const label = tagLabels[tag] || { tr: tag, en: tag };
+                        return `<span class="px-2 py-1 bg-cyan-500/20 text-cyan-300 rounded text-xs">${lang === 'en' ? label.en : label.tr}</span>`;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        // Heatmap overlay
+        if (heatmap && heatmap.overlay_base64) {
+            html += `
+                <div class="space-y-2">
+                    <button id="toggleGenHeatmapBtn" 
+                            class="w-full px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-200 flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="layers" class="w-4 h-4"></i>
+                        <span id="toggleGenHeatmapText">${this.t('show_overlay')}</span>
+                    </button>
+                    
+                    <div id="genHeatmapImageContainer" class="hidden relative rounded-lg overflow-hidden">
+                        <img id="genHeatmapImage" 
+                             src="data:image/png;base64,${heatmap.overlay_base64}" 
+                             alt="Generative Artifact Heatmap"
+                             class="w-full h-auto rounded-lg" />
+                        <div class="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-cyan-300">
+                            ${lang === 'en' ? 'Generative Artifacts' : 'Üretim Artefaktları'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Top regions - NOW CLICKABLE with bbox highlighting
+        if (regions.length > 0) {
+            html += `
+                <div class="mt-3 bg-slate-800/30 rounded-lg p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs text-cyan-400 font-semibold">
+                            <i data-lucide="map-pin" class="w-3 h-3 inline mr-1"></i>
+                            ${lang === 'en' ? 'Artifact Regions' : 'Artefakt Bölgeleri'} (${regions.length})
+                        </span>
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Click to highlight' : 'Vurgulamak için tıkla'}</span>
+                    </div>
+                    <div class="space-y-1 text-xs max-h-40 overflow-y-auto">
+            `;
+            
+            regions.slice(0, 10).forEach((r, i) => {
+                const regionTags = r.tags || [];
+                const tagStr = regionTags.map(t => {
+                    const label = tagLabels[t] || { tr: t, en: t };
+                    return lang === 'en' ? label.en : label.tr;
+                }).join(', ');
+                
+                html += `
+                    <div class="region-item flex justify-between items-center text-slate-300 bg-slate-700/50 hover:bg-cyan-500/20 rounded p-2 cursor-pointer transition-colors"
+                         data-region-id="${i}"
+                         data-region-x="${r.x}"
+                         data-region-y="${r.y}"
+                         data-region-w="${r.w}"
+                         data-region-h="${r.h}"
+                         data-region-score="${r.score}">
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 flex items-center justify-center bg-cyan-500/30 rounded text-cyan-300 text-xs font-bold">${i+1}</span>
+                            <span class="truncate max-w-32">${tagStr || 'artifact'}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500 text-xs">(${r.x},${r.y})</span>
+                            <span class="font-mono text-cyan-400">${(r.score * 100).toFixed(0)}%</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        }
+        
+        // Hash info
+        if (heatmap) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-500 cursor-pointer">${lang === 'en' ? 'Integrity Hashes' : 'Bütünlük Hash\'leri'}</summary>
+                    <div class="mt-2 text-xs text-slate-500 font-mono break-all">
+                        <p>Overlay: ${heatmap.hash_overlay_sha256?.substring(0, 16)}...</p>
+                        <p>Raw: ${heatmap.hash_raw_sha256?.substring(0, 16)}...</p>
+                    </div>
+                </details>
+            `;
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
+        
+        // Bind toggle button
+        const toggleBtn = document.getElementById('toggleGenHeatmapBtn');
+        const heatmapContainer = document.getElementById('genHeatmapImageContainer');
+        const toggleText = document.getElementById('toggleGenHeatmapText');
+        
+        if (toggleBtn && heatmapContainer) {
+            toggleBtn.addEventListener('click', () => {
+                const isHidden = heatmapContainer.classList.contains('hidden');
+                heatmapContainer.classList.toggle('hidden');
+                toggleText.textContent = isHidden ? this.t('hide_overlay') : this.t('show_overlay');
+            });
+        }
+        
+        // Bind region click handlers for bbox highlighting
+        const regionItems = container.querySelectorAll('.region-item');
+        const heatmapImg = document.getElementById('genHeatmapImage');
+        
+        regionItems.forEach(item => {
+            item.addEventListener('click', () => {
+                // Remove previous selection
+                regionItems.forEach(ri => ri.classList.remove('ring-2', 'ring-cyan-400'));
+                item.classList.add('ring-2', 'ring-cyan-400');
+                
+                // Show the overlay if hidden
+                if (heatmapContainer && heatmapContainer.classList.contains('hidden')) {
+                    heatmapContainer.classList.remove('hidden');
+                    if (toggleText) toggleText.textContent = this.t('hide_overlay');
+                }
+                
+                // Draw bounding box on overlay
+                const x = parseInt(item.dataset.regionX);
+                const y = parseInt(item.dataset.regionY);
+                const w = parseInt(item.dataset.regionW);
+                const h = parseInt(item.dataset.regionH);
+                
+                this.highlightRegionOnHeatmap(heatmapImg, x, y, w, h);
+            });
+        });
+    }
+    
+    highlightRegionOnHeatmap(img, x, y, w, h) {
+        if (!img) return;
+        
+        // Remove existing highlight
+        const existingHighlight = document.getElementById('regionHighlight');
+        if (existingHighlight) existingHighlight.remove();
+        
+        // Get image dimensions and compute scale
+        const imgRect = img.getBoundingClientRect();
+        const naturalWidth = img.naturalWidth || imgRect.width;
+        const naturalHeight = img.naturalHeight || imgRect.height;
+        const scaleX = imgRect.width / naturalWidth;
+        const scaleY = imgRect.height / naturalHeight;
+        
+        // Create highlight overlay
+        const highlight = document.createElement('div');
+        highlight.id = 'regionHighlight';
+        highlight.className = 'absolute border-2 border-cyan-400 bg-cyan-400/20 pointer-events-none transition-all duration-300';
+        highlight.style.left = `${x * scaleX}px`;
+        highlight.style.top = `${y * scaleY}px`;
+        highlight.style.width = `${w * scaleX}px`;
+        highlight.style.height = `${h * scaleY}px`;
+        highlight.style.boxShadow = '0 0 10px rgba(34, 211, 238, 0.5)';
+        
+        // Add to container
+        const container = img.parentElement;
+        if (container) {
+            container.style.position = 'relative';
+            container.appendChild(highlight);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                highlight.style.opacity = '0';
+                setTimeout(() => highlight.remove(), 300);
+            }, 5000);
         }
     }
 
@@ -696,6 +1378,7 @@ class AIImageDetector {
             'AI_T2I_MEDIUM': { color: 'purple', icon: 'wand-2' },
             'AI_PHOTOREAL_HIGH': { color: 'purple', icon: 'sparkles' },
             'AI_PHOTOREAL_MEDIUM': { color: 'purple', icon: 'sparkles' },
+            'AI_GENERATIVE_UNKNOWN': { color: 'purple', icon: 'help-circle' },
             'GENERATOR_ARTIFACTS': { color: 'blue', icon: 'cpu' },
             'AI_HIGH': { color: 'red', icon: 'alert-triangle' },
             'AI_MEDIUM': { color: 'orange', icon: 'alert-triangle' },
@@ -720,6 +1403,7 @@ class AIImageDetector {
             'AI_T2I_MEDIUM': { tr: 'T2I Orta Güven', en: 'T2I Medium Confidence' },
             'AI_PHOTOREAL_HIGH': { tr: 'Fotogerçekçi AI', en: 'Photoreal AI' },
             'AI_PHOTOREAL_MEDIUM': { tr: 'Olası Fotogerçekçi AI', en: 'Possible Photoreal AI' },
+            'AI_GENERATIVE_UNKNOWN': { tr: 'AI Üretimi (Pathway Belirsiz)', en: 'AI Generated (Pathway Unknown)' },
             'GENERATOR_ARTIFACTS': { tr: 'AI Artefaktları', en: 'AI Artifacts' },
             'AI_HIGH': { tr: 'Yüksek Güven', en: 'High Confidence' },
             'AI_MEDIUM': { tr: 'Orta Güven', en: 'Medium Confidence' },
@@ -1189,9 +1873,18 @@ class AIImageDetector {
         `;
     }
 
-    displayGPS(gps) {
+    displayGPS(gps, verdictText) {
         const container = document.getElementById('gpsContainer');
         if (!container) return;
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        
+        // Get GPS consistency from verdict_text if available
+        const gpsConsistency = verdictText?.gps_consistency || {};
+        const consistency = gpsConsistency.consistency || 'none';
+        const consistencyMessage = lang === 'en' 
+            ? gpsConsistency.message_en 
+            : gpsConsistency.message_tr;
         
         if (gps.present && gps.latitude && gps.longitude) {
             const confidence = gps.confidence || 'unknown';
@@ -1201,8 +1894,32 @@ class AIImageDetector {
                 'low': 'text-orange-400'
             };
             
+            // Consistency-based warning styling
+            const consistencyStyles = {
+                'strong': {
+                    borderColor: 'border-green-500/30',
+                    bgColor: 'bg-green-500/10',
+                    iconColor: 'text-green-400',
+                    icon: 'shield-check'
+                },
+                'weak': {
+                    borderColor: 'border-amber-500/30',
+                    bgColor: 'bg-amber-500/10',
+                    iconColor: 'text-amber-400',
+                    icon: 'alert-triangle'
+                },
+                'none': {
+                    borderColor: 'border-blue-500/30',
+                    bgColor: 'bg-blue-500/10',
+                    iconColor: 'text-blue-400',
+                    icon: 'map-pin'
+                }
+            };
+            
+            const style = consistencyStyles[consistency] || consistencyStyles.none;
+            
             container.innerHTML = `
-                <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                <div class="${style.bgColor} border ${style.borderColor} rounded-lg p-4">
                     <div class="flex items-center gap-2 text-blue-400 mb-3">
                         <i data-lucide="map-pin" class="w-5 h-5"></i>
                         <span class="font-semibold">${this.t('gps_found')}</span>
@@ -1228,9 +1945,10 @@ class AIImageDetector {
                             <p class="font-mono text-slate-200 text-xs">${gps.timestamp_utc}</p>
                         </div>` : ''}
                     </div>
-                    <div class="text-xs text-amber-400 mt-2">
-                        <i data-lucide="alert-triangle" class="w-3 h-3 inline mr-1"></i>
-                        ${this.t('gps_warning')}
+                    <!-- GPS Consistency Message (conditional) -->
+                    <div class="text-xs ${style.iconColor} mt-2">
+                        <i data-lucide="${style.icon}" class="w-3 h-3 inline mr-1"></i>
+                        ${consistencyMessage || this.t('gps_warning')}
                     </div>
                 </div>
             `;
@@ -1421,6 +2139,293 @@ class AIImageDetector {
                 </p>
             </div>
         `;
+    }
+
+    displayTextForensics(textData) {
+        const container = document.getElementById('textForensicsContainer');
+        if (!container) return;
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        
+        // Check if OCR is not available (error field present)
+        if (textData && textData.error) {
+            container.innerHTML = `
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                    <div class="flex items-center gap-3 mb-2">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400"></i>
+                        <p class="text-amber-400 font-semibold">${lang === 'en' ? 'OCR Not Available' : 'OCR Mevcut Değil'}</p>
+                    </div>
+                    <p class="text-sm text-slate-400 mb-3">${lang === 'en' 
+                        ? 'Text analysis requires EasyOCR or Tesseract. Install with:' 
+                        : 'Metin analizi için EasyOCR veya Tesseract gerekli. Yüklemek için:'}</p>
+                    <code class="text-xs bg-slate-800 text-cyan-400 px-2 py-1 rounded">pip install easyocr</code>
+                </div>
+            `;
+            return;
+        }
+        
+        if (!textData || !textData.enabled) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">${this.t('text_forensics_disabled')}</p>`;
+            return;
+        }
+        
+        if (!textData.has_text) {
+            container.innerHTML = `
+                <div class="bg-slate-800/50 rounded-lg p-4 text-center">
+                    <i data-lucide="type" class="w-8 h-8 text-slate-500 mx-auto mb-2"></i>
+                    <p class="text-slate-400">${lang === 'en' ? 'No text detected in image' : 'Görselde metin tespit edilmedi'}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const verdict = textData.verdict || 'inconclusive';
+        const confidence = textData.confidence || 'low';
+        
+        // Verdict styling
+        const verdictConfig = {
+            'likely_ai': { 
+                color: 'red', 
+                icon: 'alert-triangle',
+                label: { en: 'AI Text Artifacts Detected', tr: 'AI Metin Artefaktları Tespit Edildi' }
+            },
+            'likely_real': { 
+                color: 'green', 
+                icon: 'check-circle',
+                label: { en: 'Text Appears Authentic', tr: 'Metin Otantik Görünüyor' }
+            },
+            'inconclusive': { 
+                color: 'yellow', 
+                icon: 'help-circle',
+                label: { en: 'Inconclusive', tr: 'Belirsiz' }
+            },
+            'no_text': { 
+                color: 'slate', 
+                icon: 'minus-circle',
+                label: { en: 'No Text', tr: 'Metin Yok' }
+            }
+        };
+        
+        const vConfig = verdictConfig[verdict] || verdictConfig.inconclusive;
+        
+        let html = `
+            <div class="space-y-4">
+                <!-- Verdict -->
+                <div class="bg-${vConfig.color}-500/10 border border-${vConfig.color}-500/30 rounded-lg p-4">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="${vConfig.icon}" class="w-6 h-6 text-${vConfig.color}-400"></i>
+                        <div>
+                            <p class="font-semibold text-${vConfig.color}-400">${vConfig.label[lang]}</p>
+                            <p class="text-xs text-slate-400">${lang === 'en' ? 'Confidence' : 'Güven'}: ${confidence}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Scores -->
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500">${lang === 'en' ? 'Text Regions' : 'Metin Bölgesi'}</p>
+                        <p class="text-lg font-mono text-slate-200">${textData.text_count}</p>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500">${lang === 'en' ? 'AI Score' : 'AI Skoru'}</p>
+                        <p class="text-lg font-mono ${textData.ai_text_score >= 0.5 ? 'text-red-400' : 'text-green-400'}">
+                            ${(textData.ai_text_score * 100).toFixed(0)}%
+                        </p>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500">${lang === 'en' ? 'Gibberish' : 'Anlamsız'}</p>
+                        <p class="text-lg font-mono ${textData.gibberish_ratio >= 0.3 ? 'text-red-400' : 'text-slate-200'}">
+                            ${(textData.gibberish_ratio * 100).toFixed(0)}%
+                        </p>
+                    </div>
+                </div>
+        `;
+        
+        // AI Text Evidence
+        if (textData.ai_text_evidence?.length > 0) {
+            html += `
+                <div class="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                    <p class="text-xs text-red-400 font-semibold mb-2">
+                        <i data-lucide="alert-circle" class="w-3 h-3 inline mr-1"></i>
+                        ${lang === 'en' ? 'AI Text Artifacts' : 'AI Metin Artefaktları'}
+                    </p>
+                    <ul class="text-xs text-slate-300 space-y-1">
+                        ${textData.ai_text_evidence.map(e => `<li>• ${e}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+        
+        // Real Text Evidence
+        if (textData.real_text_evidence?.length > 0) {
+            html += `
+                <div class="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                    <p class="text-xs text-green-400 font-semibold mb-2">
+                        <i data-lucide="check-circle" class="w-3 h-3 inline mr-1"></i>
+                        ${lang === 'en' ? 'Valid Text' : 'Geçerli Metin'}
+                    </p>
+                    <ul class="text-xs text-slate-300 space-y-1">
+                        ${textData.real_text_evidence.map(e => `<li>• ${e}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+        
+        // Detected Text Regions (collapsible)
+        if (textData.regions?.length > 0) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Detected Text Regions' : 'Tespit Edilen Metin Bölgeleri'} (${textData.regions.length})
+                    </summary>
+                    <div class="mt-2 space-y-2">
+                        ${textData.regions.map(r => `
+                            <div class="bg-slate-800/30 rounded p-2 text-xs">
+                                <div class="flex justify-between items-start">
+                                    <span class="font-mono text-slate-200">"${r.text}"</span>
+                                    <span class="text-${r.ai_artifact_score >= 0.5 ? 'red' : r.is_valid_word ? 'green' : 'slate'}-400">
+                                        ${(r.ai_artifact_score * 100).toFixed(0)}%
+                                    </span>
+                                </div>
+                                ${r.issues?.length > 0 ? `
+                                    <p class="text-red-400/70 mt-1">${r.issues.join(', ')}</p>
+                                ` : ''}
+                                ${r.is_gibberish ? `<span class="text-red-400 text-xs">⚠️ Gibberish</span>` : ''}
+                                ${r.is_valid_word ? `<span class="text-green-400 text-xs">✓ Valid</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            `;
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    displayGeneratorFingerprint(fingerprintData) {
+        const container = document.getElementById('generatorFingerprintContainer');
+        if (!container) return;
+        
+        if (!fingerprintData || !fingerprintData.enabled) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">${this.t('generator_fingerprint_disabled')}</p>`;
+            return;
+        }
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        const topMatch = fingerprintData.top_match;
+        const confidence = fingerprintData.identification_confidence || 'low';
+        
+        // Confidence colors
+        const confColors = {
+            'high': 'green',
+            'medium': 'yellow',
+            'low': 'orange'
+        };
+        const confColor = confColors[confidence] || 'orange';
+        
+        let html = '<div class="space-y-4">';
+        
+        // Top Match
+        if (topMatch) {
+            html += `
+                <div class="bg-pink-500/10 border border-pink-500/30 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="fingerprint" class="w-6 h-6 text-pink-400"></i>
+                            <div>
+                                <p class="font-semibold text-pink-400">${topMatch.name}</p>
+                                <p class="text-xs text-slate-400">${lang === 'en' ? 'Family' : 'Aile'}: ${topMatch.family}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-lg font-mono text-${confColor}-400">${(topMatch.confidence * 100).toFixed(0)}%</p>
+                            <p class="text-xs text-slate-500">${lang === 'en' ? 'Match' : 'Eşleşme'}</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Confidence bar -->
+                    <div class="mt-3 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full" 
+                             style="width: ${topMatch.confidence * 100}%"></div>
+                    </div>
+                    
+                    <!-- Matching features -->
+                    ${topMatch.matching_features?.length > 0 ? `
+                        <div class="mt-3 text-xs text-slate-400">
+                            <p class="mb-1">${lang === 'en' ? 'Matching Features:' : 'Eşleşen Özellikler:'}</p>
+                            ${topMatch.matching_features.slice(0, 3).map(f => `<p>• ${f}</p>`).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="bg-slate-800/50 rounded-lg p-4 text-center">
+                    <i data-lucide="help-circle" class="w-8 h-8 text-slate-500 mx-auto mb-2"></i>
+                    <p class="text-slate-400">${lang === 'en' ? 'No strong generator match found' : 'Güçlü üretici eşleşmesi bulunamadı'}</p>
+                </div>
+            `;
+        }
+        
+        // Other Candidates
+        if (fingerprintData.candidates?.length > 1) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Other Candidates' : 'Diğer Adaylar'} (${fingerprintData.candidates.length - 1})
+                    </summary>
+                    <div class="mt-2 space-y-2">
+                        ${fingerprintData.candidates.slice(1, 5).map(c => `
+                            <div class="bg-slate-800/30 rounded p-2 flex justify-between items-center">
+                                <div>
+                                    <span class="text-sm text-slate-200">${c.name}</span>
+                                    <span class="text-xs text-slate-500 ml-2">(${c.family})</span>
+                                </div>
+                                <span class="font-mono text-sm text-slate-400">${(c.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            `;
+        }
+        
+        // Evidence
+        if (fingerprintData.evidence?.length > 0) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Analysis Evidence' : 'Analiz Kanıtları'}
+                    </summary>
+                    <ul class="mt-2 text-xs text-slate-400 space-y-1">
+                        ${fingerprintData.evidence.map(e => `<li>• ${e}</li>`).join('')}
+                    </ul>
+                </details>
+            `;
+        }
+        
+        // Notes
+        if (fingerprintData.notes?.length > 0) {
+            html += `
+                <div class="mt-2 text-xs text-amber-400/70">
+                    ${fingerprintData.notes.map(n => `<p><i data-lucide="info" class="w-3 h-3 inline mr-1"></i>${n}</p>`).join('')}
+                </div>
+            `;
+        }
+        
+        // Disclaimer
+        html += `
+            <p class="text-xs text-slate-500 mt-3">
+                <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                ${lang === 'en' 
+                    ? 'Generator identification is based on statistical analysis and may not be accurate.'
+                    : 'Üretici tespiti istatistiksel analize dayanır ve kesin olmayabilir.'}
+            </p>
+        `;
+        
+        html += '</div>';
+        container.innerHTML = html;
     }
 
     displayPathway(pathwayData, diffusionData) {
@@ -1720,6 +2725,136 @@ class AIImageDetector {
                     </div>
                 </div>
             `;
+        }
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    displayProvenance(provenance, scores) {
+        const container = document.getElementById('provenanceContainer');
+        if (!container) return;
+        
+        const lang = window.i18n?.getCurrentLanguage() || 'tr';
+        
+        if (!provenance || provenance.score === undefined) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">${lang === 'en' ? 'Provenance data not available' : 'Provenance verisi mevcut değil'}</p>`;
+            return;
+        }
+        
+        const score = provenance.score || 0;
+        const rationale = lang === 'en' ? provenance.rationale_en : provenance.rationale_tr;
+        const isPlatformReencoded = provenance.is_platform_reencoded || false;
+        const flags = provenance.flags || {};
+        
+        // Score color
+        let scoreColor = 'text-slate-400';
+        let scoreBg = 'bg-slate-500/20';
+        let scoreIcon = 'file-question';
+        
+        if (score >= 0.45) {
+            scoreColor = 'text-green-400';
+            scoreBg = 'bg-green-500/20';
+            scoreIcon = 'shield-check';
+        } else if (score >= 0.20) {
+            scoreColor = 'text-yellow-400';
+            scoreBg = 'bg-yellow-500/20';
+            scoreIcon = 'alert-triangle';
+        } else {
+            scoreColor = 'text-slate-400';
+            scoreBg = 'bg-slate-500/20';
+            scoreIcon = 'file-question';
+        }
+        
+        let html = `
+            <div class="space-y-3">
+                <!-- Score Header -->
+                <div class="${scoreBg} border border-${scoreColor.replace('text-', '')}/30 rounded-lg p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="${scoreIcon}" class="w-5 h-5 ${scoreColor}"></i>
+                            <span class="font-semibold ${scoreColor}">
+                                ${lang === 'en' ? 'Provenance Score' : 'Provenance Skoru'}
+                            </span>
+                        </div>
+                        <span class="font-mono text-lg ${scoreColor}">${(score * 100).toFixed(0)}%</span>
+                    </div>
+                    
+                    <!-- Main rationale (first item) -->
+                    ${rationale && rationale.length > 0 ? `
+                    <p class="text-xs ${scoreColor}">${rationale[0]}</p>
+                    ` : ''}
+                </div>
+        `;
+        
+        // Platform re-encoding badge
+        if (isPlatformReencoded) {
+            const platform = flags.platform_software || 'Platform';
+            html += `
+                <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2 flex items-center gap-2">
+                    <i data-lucide="smartphone" class="w-4 h-4 text-blue-400"></i>
+                    <span class="text-xs text-blue-300">
+                        ${lang === 'en' 
+                            ? `Platform re-encoding detected: ${platform}` 
+                            : `Platform yeniden kodlaması: ${platform}`}
+                    </span>
+                </div>
+            `;
+        }
+        
+        // Scores comparison (if available)
+        if (scores) {
+            const camScore = scores.camera_score || 0;
+            const genScore = scores.generative_score || 0;
+            const provScore = scores.provenance_score || score;
+            
+            html += `
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-slate-800/50 rounded p-2">
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Camera' : 'Kamera'}</span>
+                        <p class="font-mono text-sm ${camScore >= 0.3 ? 'text-green-400' : 'text-slate-400'}">${(camScore * 100).toFixed(0)}%</p>
+                    </div>
+                    <div class="bg-slate-800/50 rounded p-2">
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Generative' : 'Üretim'}</span>
+                        <p class="font-mono text-sm ${genScore >= 0.5 ? 'text-purple-400' : 'text-slate-400'}">${(genScore * 100).toFixed(0)}%</p>
+                    </div>
+                    <div class="bg-slate-800/50 rounded p-2">
+                        <span class="text-xs text-slate-500">${lang === 'en' ? 'Provenance' : 'Provenance'}</span>
+                        <p class="font-mono text-sm ${provScore >= 0.45 ? 'text-green-400' : 'text-slate-400'}">${(provScore * 100).toFixed(0)}%</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Detailed rationale (collapsible)
+        if (rationale && rationale.length > 1) {
+            html += `
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-400 cursor-pointer">
+                        ${lang === 'en' ? 'Detailed Rationale' : 'Detaylı Gerekçe'} (${rationale.length - 1})
+                    </summary>
+                    <ul class="mt-2 text-xs text-slate-400 space-y-1">
+                        ${rationale.slice(1).map(r => `<li>• ${r}</li>`).join('')}
+                    </ul>
+                </details>
+            `;
+        }
+        
+        // Flags (collapsible)
+        if (flags && Object.keys(flags).length > 0) {
+            const flagItems = [];
+            if (flags.exif_present) flagItems.push(lang === 'en' ? 'EXIF present' : 'EXIF mevcut');
+            if (flags.datetime_original) flagItems.push(lang === 'en' ? 'DateTimeOriginal' : 'DateTimeOriginal');
+            if (flags.gps_present) flagItems.push(lang === 'en' ? 'GPS present' : 'GPS mevcut');
+            if (flags.camera_info) flagItems.push(lang === 'en' ? 'Camera info' : 'Kamera bilgisi');
+            
+            if (flagItems.length > 0) {
+                html += `
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        ${flagItems.map(f => `<span class="px-2 py-0.5 bg-slate-700/50 text-slate-400 rounded text-xs">${f}</span>`).join('')}
+                    </div>
+                `;
+            }
         }
         
         html += '</div>';

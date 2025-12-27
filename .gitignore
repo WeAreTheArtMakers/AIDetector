@@ -93,3 +93,15 @@ docker-compose.override.yml
 # secrets
 keys/
 backend/keys/
+
+# Test files
+test_image.jpg
+realistic_photo.jpg
+backend.log
+
+# HuggingFace cache
+.cache/
+~/.cache/huggingface/
+
+# EasyOCR models
+~/.EasyOCR/
